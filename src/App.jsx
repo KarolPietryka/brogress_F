@@ -26,11 +26,18 @@ function parseIntOrNull(s) {
   return Number.isFinite(n) ? n : null;
 }
 
+function makeId() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  }
+}
+
 export default function App() {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState(() => new Set());
-  const [selectedExercises, setSelectedExercises] = useState(() => new Set());
-  const [exerciseMeta, setExerciseMeta] = useState(() => ({})); // { [exerciseName]: { weight: "123", reps: "10" } }
+  const [workoutSets, setWorkoutSets] = useState([]); // [{ id, groupName, name, weight, reps }]
   const [templateItems, setTemplateItems] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -50,8 +57,8 @@ export default function App() {
   }, [selectedGroups]);
 
   const canSend = useMemo(() => {
-    return selectedGroups.size > 0 && visibleExercisesAll.length > 0 && selectedExercises.size > 0;
-  }, [selectedGroups, visibleExercisesAll, selectedExercises]);
+    return selectedGroups.size > 0 && visibleExercisesAll.length > 0 && workoutSets.length > 0;
+  }, [selectedGroups, visibleExercisesAll, workoutSets.length]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -69,8 +76,7 @@ export default function App() {
   function openModal() {
     setIsOpen(true);
     setSelectedGroups(new Set());
-    setSelectedExercises(new Set());
-    setExerciseMeta({});
+    setWorkoutSets([]);
     setIsSubmitting(false);
     setSubmitError("");
   }
@@ -81,37 +87,41 @@ export default function App() {
     setSubmitError("");
   }
 
-  function toggleExercise(exercise, checked) {
-    setSelectedExercises((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(exercise);
-      else next.delete(exercise);
+  function addExerciseToWorkout(groupName, exerciseName) {
+    setWorkoutSets((prev) => {
+      const next = [...prev];
+      next.push({
+        id: makeId(),
+        groupName,
+        name: exerciseName,
+        weight: "",
+        reps: "",
+      });
       return next;
     });
   }
 
-  function setExerciseField(exercise, field, raw) {
+  function setWorkoutSetField(setId, field, raw) {
     const value = digits4(raw);
-    setExerciseMeta((prev) => ({
-      ...prev,
-      [exercise]: { ...(prev[exercise] || { weight: "", reps: "" }), [field]: value },
-    }));
-    // Typing implies intent to include the exercise.
-    setSelectedExercises((prev) => new Set(prev).add(exercise));
+    setWorkoutSets((prev) =>
+      prev.map((s) => (s.id === setId ? { ...s, [field]: value } : s))
+    );
   }
 
   function buildWorkoutRequestBody() {
+    const byGroup = new Map();
+    for (const set of workoutSets) {
+      if (!byGroup.has(set.groupName)) byGroup.set(set.groupName, []);
+      byGroup.get(set.groupName).push({
+        name: set.name,
+        reps: parseIntOrNull(set.reps),
+        weight: parseIntOrNull(set.weight),
+      });
+    }
+
     const bodyPart = selectedGroupList
       .map((groupName) => {
-      const list = EXERCISES_BY_GROUP[groupName] || [];
-      const exercises = list
-        .filter((ex) => selectedExercises.has(ex))
-        .map((name) => ({
-          name,
-          reps: parseIntOrNull(exerciseMeta[name]?.reps || ""),
-          weight: parseIntOrNull(exerciseMeta[name]?.weight || ""),
-        }));
-
+        const exercises = byGroup.get(groupName) || [];
         return {
           bodyPartName: BODY_PART_API_NAME[groupName] || String(groupName).toLowerCase(),
           exercises,
@@ -124,15 +134,15 @@ export default function App() {
 
   async function addWorkoutToTemplate() {
     if (!canSend) {
-      setSubmitError("Select at least one muscle group and one exercise.");
+      setSubmitError("Select at least one muscle group and add an exercise.");
       return;
     }
 
-    for (const ex of selectedExercises) {
-      const reps = parseIntOrNull(exerciseMeta[ex]?.reps || "");
-      const weight = parseIntOrNull(exerciseMeta[ex]?.weight || "");
+    for (const s of workoutSets) {
+      const reps = parseIntOrNull(s.reps);
+      const weight = parseIntOrNull(s.weight);
       if (reps == null || weight == null) {
-        setSubmitError("Fill in Weight and Reps for every selected exercise.");
+        setSubmitError("Fill in Weight and Reps for every set.");
         return;
       }
     }
@@ -141,10 +151,10 @@ export default function App() {
     setSubmitError("");
 
     const groups = MUSCLE_GROUPS.filter((g) => selectedGroups.has(g));
-    const exercises = Array.from(selectedExercises).map((name) => ({
-      name,
-      weight: exerciseMeta[name]?.weight || "",
-      reps: exerciseMeta[name]?.reps || "",
+    const exercises = workoutSets.map((s) => ({
+      name: s.name,
+      weight: s.weight,
+      reps: s.reps,
     }));
 
     const payload = buildWorkoutRequestBody();
@@ -175,25 +185,11 @@ export default function App() {
 
   useEffect(() => {
     if (selectedGroups.size === 0) {
-      setSelectedExercises(new Set());
-      setExerciseMeta({});
+      setWorkoutSets([]);
       return;
     }
 
-    const visible = new Set();
-    for (const g of selectedGroups) {
-      const list = EXERCISES_BY_GROUP[g] || [];
-      for (const ex of list) visible.add(ex);
-    }
-
-    setSelectedExercises((prev) => new Set(Array.from(prev).filter((e) => visible.has(e))));
-    setExerciseMeta((prev) => {
-      const next = {};
-      for (const [ex, meta] of Object.entries(prev)) {
-        if (visible.has(ex)) next[ex] = meta;
-      }
-      return next;
-    });
+    setWorkoutSets((prev) => prev.filter((s) => selectedGroups.has(s.groupName)));
   }, [selectedGroups]);
 
   return (
@@ -207,20 +203,19 @@ export default function App() {
           </div>
         </div>
         <button className="btn primary" type="button" onClick={openModal}>
-          Add workout
+          Add Excercise
         </button>
       </header>
 
       <section className="content">
         <div className="panel">
           <div className="panel-head">
-            <h2 className="panel-title">Template</h2>
-            <p className="panel-hint">Add a workout: pick a muscle group, then exercises.</p>
+            <h2 className="panel-title">Current workout</h2>
           </div>
           <div className="template" aria-live="polite">
             {templateItems.length === 0 ? (
               <div className="empty">
-                Nothing here yet. Click <span className="pill">Add workout</span>.
+                {"<placeholder for next excercises>"}
               </div>
             ) : (
               templateItems.map((item) => (
@@ -230,8 +225,8 @@ export default function App() {
                     <div className="card-meta">{formatTime(item.createdAt)}</div>
                   </div>
                   <div className="tags">
-                    {item.exercises.map((e) => (
-                      <span className="tag" key={e.name}>
+                    {item.exercises.map((e, idx) => (
+                      <span className="tag" key={`${idx}_${e.name}`}>
                         {e.weight && e.reps ? `${e.name} ${e.weight}x${e.reps}` : e.name}
                       </span>
                     ))}
@@ -250,7 +245,7 @@ export default function App() {
             <div className="modal-card">
               <div className="modal-head">
                 <div>
-                  <div className="modal-kicker">Add workout</div>
+                  <div className="modal-kicker">Add Excercise</div>
                   <h3 className="modal-title" id="modalTitle">
                     Pick muscle groups and exercises
                   </h3>
@@ -309,42 +304,55 @@ export default function App() {
                           ) : (
                             <div className="checks">
                               {list.map((ex) => (
-                                <div className="exerciseRow" key={`${groupName}:${ex}`}>
-                                  <label className="exerciseLeft">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedExercises.has(ex)}
-                                      onChange={(e) => toggleExercise(ex, e.target.checked)}
-                                    />
-                                    <span className="check-text">{ex}</span>
-                                  </label>
-                                  <div className="exerciseFields">
-                                    <input
-                                      className="numField"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      maxLength={4}
-                                      placeholder="Weight"
-                                      value={exerciseMeta[ex]?.weight || ""}
-                                      onChange={(e) => setExerciseField(ex, "weight", e.target.value)}
-                                    />
-                                    <input
-                                      className="numField"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      maxLength={4}
-                                      placeholder="Reps"
-                                      value={exerciseMeta[ex]?.reps || ""}
-                                      onChange={(e) => setExerciseField(ex, "reps", e.target.value)}
-                                    />
-                                  </div>
-                                </div>
+                                <button
+                                  key={`${groupName}:${ex}`}
+                                  type="button"
+                                  className="exerciseBtn"
+                                  onClick={() => addExerciseToWorkout(groupName, ex)}
+                                >
+                                  {ex}
+                                </button>
                               ))}
                             </div>
                           )}
                         </section>
                       );
                     })}
+
+                    {workoutSets.length > 0 ? (
+                      <section className="groupSection">
+                        <div className="workoutHeader">Current workout</div>
+                        <div className="checks">
+                          {workoutSets.map((s) => (
+                            <div className="exerciseRow" key={s.id}>
+                              <div className="workoutLeft">
+                                <span className="check-text">{s.name}</span>
+                              </div>
+                              <div className="exerciseFields">
+                                <input
+                                  className="numField"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  maxLength={4}
+                                  placeholder="Weight"
+                                  value={s.weight}
+                                  onChange={(e) => setWorkoutSetField(s.id, "weight", e.target.value)}
+                                />
+                                <input
+                                  className="numField"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  maxLength={4}
+                                  placeholder="Reps"
+                                  value={s.reps}
+                                  onChange={(e) => setWorkoutSetField(s.id, "reps", e.target.value)}
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ) : null}
                   </div>
                 )}
               </div>

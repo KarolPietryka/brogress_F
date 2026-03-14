@@ -9,5 +9,4 @@ npm install
 npm run dev
 ```
 
-Otworz `http://localhost:3001`.
-
+Otworz `http://localhost:3001/kejpi`.
