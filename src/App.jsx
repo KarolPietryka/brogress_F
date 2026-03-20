@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BODY_PART_API_NAME, EXERCISES_BY_GROUP, MUSCLE_GROUPS } from "./workoutData.js";
+import { WorkoutClient } from "./workoutClient.js";
+import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./workoutRequest.js";
+
+const workoutClient = new WorkoutClient();
 
 function formatTime(ts) {
   try {
@@ -103,27 +107,6 @@ export default function App() {
     }));
   }
 
-  function buildWorkoutRequestBody() {
-    const groupOrder = [];
-    const byGroup = new Map();
-    for (const line of draftLines) {
-      if (!byGroup.has(line.group)) {
-        byGroup.set(line.group, []);
-        groupOrder.push(line.group);
-      }
-      byGroup.get(line.group).push({
-        name: line.name,
-        reps: parseIntOrNull(exerciseMeta[line.id]?.reps || ""),
-        weight: parseIntOrNull(exerciseMeta[line.id]?.weight || ""),
-      });
-    }
-    const bodyPart = groupOrder.map((groupName) => ({
-      bodyPartName: BODY_PART_API_NAME[groupName] || String(groupName).toLowerCase(),
-      exercises: byGroup.get(groupName),
-    }));
-    return { bodyPart };
-  }
-
   async function addWorkoutToTemplate() {
     if (!canSend) {
       setSubmitError("Add at least one exercise to the workout below.");
@@ -149,16 +132,31 @@ export default function App() {
       reps: exerciseMeta[line.id]?.reps || "",
     }));
 
-    const payload = buildWorkoutRequestBody();
-    // Helpful for debugging in browser DevTools.
-    console.info("POST /workout payload", payload);
+    const request = new WorkoutSubmitRequest();
+    const groupOrder = [];
+    const byGroup = new Map();
+    for (const line of draftLines) {
+      if (!byGroup.has(line.group)) {
+        byGroup.set(line.group, []);
+        groupOrder.push(line.group);
+      }
+      const row = new WorkoutExercise();
+      row.name = line.name;
+      row.weight = parseIntOrNull(exerciseMeta[line.id]?.weight || "");
+      row.reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
+      byGroup.get(line.group).push(row);
+    }
+    request.bodyPart = groupOrder.map((groupName) => {
+      const block = new WorkoutBodyPart();
+      block.bodyPartName = BODY_PART_API_NAME[groupName] || String(groupName).toLowerCase();
+      block.exercises = byGroup.get(groupName);
+      return block;
+    });
+
+    console.info("POST /workout payload", request);
 
     try {
-      const res = await fetch("http://localhost:8080/workout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const res = await workoutClient.post(request);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
