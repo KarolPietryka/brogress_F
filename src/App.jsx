@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BODY_PART_API_NAME, EXERCISES_BY_GROUP, MUSCLE_GROUPS } from "./workoutData.js";
 import { WorkoutClient } from "./workoutClient.js";
-import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./workoutRequest.js";
+import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 
 const workoutClient = new WorkoutClient();
 
