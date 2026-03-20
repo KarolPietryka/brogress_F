@@ -26,32 +26,28 @@ function parseIntOrNull(s) {
   return Number.isFinite(n) ? n : null;
 }
 
+function newDraftLineId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `d-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 export default function App() {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedGroups, setSelectedGroups] = useState(() => new Set());
-  const [selectedExercises, setSelectedExercises] = useState(() => new Set());
-  const [exerciseMeta, setExerciseMeta] = useState(() => ({})); // { [exerciseName]: { weight: "123", reps: "10" } }
+  /** Which muscle group's exercise list is shown in the picker (single). */
+  const [activeGroup, setActiveGroup] = useState(null);
+  /** Ordered lines added to the current workout draft. */
+  const [draftLines, setDraftLines] = useState([]);
+  const [exerciseMeta, setExerciseMeta] = useState(() => ({})); // { [lineId]: { weight, reps } }
   const [templateItems, setTemplateItems] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
-  const selectedGroupList = useMemo(() => {
-    return MUSCLE_GROUPS.filter((g) => selectedGroups.has(g));
-  }, [selectedGroups]);
+  const pickerExercises = useMemo(() => {
+    if (!activeGroup) return [];
+    return EXERCISES_BY_GROUP[activeGroup] || [];
+  }, [activeGroup]);
 
-  const visibleExercisesAll = useMemo(() => {
-    if (selectedGroups.size === 0) return [];
-    const all = new Set();
-    for (const g of selectedGroups) {
-      const list = EXERCISES_BY_GROUP[g] || [];
-      for (const ex of list) all.add(ex);
-    }
-    return Array.from(all);
-  }, [selectedGroups]);
-
-  const canSend = useMemo(() => {
-    return selectedGroups.size > 0 && visibleExercisesAll.length > 0 && selectedExercises.size > 0;
-  }, [selectedGroups, visibleExercisesAll, selectedExercises]);
+  const canSend = useMemo(() => draftLines.length > 0, [draftLines]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -68,8 +64,8 @@ export default function App() {
 
   function openModal() {
     setIsOpen(true);
-    setSelectedGroups(new Set());
-    setSelectedExercises(new Set());
+    setActiveGroup(null);
+    setDraftLines([]);
     setExerciseMeta({});
     setIsSubmitting(false);
     setSubmitError("");
@@ -81,58 +77,64 @@ export default function App() {
     setSubmitError("");
   }
 
-  function toggleExercise(exercise, checked) {
-    setSelectedExercises((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(exercise);
-      else next.delete(exercise);
+  function addExerciseFromPicker(groupName, exerciseName) {
+    const id = newDraftLineId();
+    setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName }]);
+    setExerciseMeta((prev) => ({
+      ...prev,
+      [id]: { weight: "", reps: "" },
+    }));
+  }
+
+  function removeDraftLine(lineId) {
+    setDraftLines((prev) => prev.filter((l) => l.id !== lineId));
+    setExerciseMeta((prev) => {
+      const next = { ...prev };
+      delete next[lineId];
       return next;
     });
   }
 
-  function setExerciseField(exercise, field, raw) {
+  function setExerciseField(lineId, field, raw) {
     const value = digits4(raw);
     setExerciseMeta((prev) => ({
       ...prev,
-      [exercise]: { ...(prev[exercise] || { weight: "", reps: "" }), [field]: value },
+      [lineId]: { ...(prev[lineId] || { weight: "", reps: "" }), [field]: value },
     }));
-    // Typing implies intent to include the exercise.
-    setSelectedExercises((prev) => new Set(prev).add(exercise));
   }
 
   function buildWorkoutRequestBody() {
-    const bodyPart = selectedGroupList
-      .map((groupName) => {
-      const list = EXERCISES_BY_GROUP[groupName] || [];
-      const exercises = list
-        .filter((ex) => selectedExercises.has(ex))
-        .map((name) => ({
-          name,
-          reps: parseIntOrNull(exerciseMeta[name]?.reps || ""),
-          weight: parseIntOrNull(exerciseMeta[name]?.weight || ""),
-        }));
-
-        return {
-          bodyPartName: BODY_PART_API_NAME[groupName] || String(groupName).toLowerCase(),
-          exercises,
-        };
-      })
-      .filter((p) => p.exercises.length > 0);
-
+    const groupOrder = [];
+    const byGroup = new Map();
+    for (const line of draftLines) {
+      if (!byGroup.has(line.group)) {
+        byGroup.set(line.group, []);
+        groupOrder.push(line.group);
+      }
+      byGroup.get(line.group).push({
+        name: line.name,
+        reps: parseIntOrNull(exerciseMeta[line.id]?.reps || ""),
+        weight: parseIntOrNull(exerciseMeta[line.id]?.weight || ""),
+      });
+    }
+    const bodyPart = groupOrder.map((groupName) => ({
+      bodyPartName: BODY_PART_API_NAME[groupName] || String(groupName).toLowerCase(),
+      exercises: byGroup.get(groupName),
+    }));
     return { bodyPart };
   }
 
   async function addWorkoutToTemplate() {
     if (!canSend) {
-      setSubmitError("Select at least one muscle group and one exercise.");
+      setSubmitError("Add at least one exercise to the workout below.");
       return;
     }
 
-    for (const ex of selectedExercises) {
-      const reps = parseIntOrNull(exerciseMeta[ex]?.reps || "");
-      const weight = parseIntOrNull(exerciseMeta[ex]?.weight || "");
+    for (const line of draftLines) {
+      const reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
+      const weight = parseIntOrNull(exerciseMeta[line.id]?.weight || "");
       if (reps == null || weight == null) {
-        setSubmitError("Fill in Weight and Reps for every selected exercise.");
+        setSubmitError("Fill in Weight and Reps for every exercise in your workout.");
         return;
       }
     }
@@ -140,11 +142,11 @@ export default function App() {
     setIsSubmitting(true);
     setSubmitError("");
 
-    const groups = MUSCLE_GROUPS.filter((g) => selectedGroups.has(g));
-    const exercises = Array.from(selectedExercises).map((name) => ({
-      name,
-      weight: exerciseMeta[name]?.weight || "",
-      reps: exerciseMeta[name]?.reps || "",
+    const groups = [...new Set(draftLines.map((l) => l.group))];
+    const exercises = draftLines.map((line) => ({
+      name: line.name,
+      weight: exerciseMeta[line.id]?.weight || "",
+      reps: exerciseMeta[line.id]?.reps || "",
     }));
 
     const payload = buildWorkoutRequestBody();
@@ -173,29 +175,6 @@ export default function App() {
     }
   }
 
-  useEffect(() => {
-    if (selectedGroups.size === 0) {
-      setSelectedExercises(new Set());
-      setExerciseMeta({});
-      return;
-    }
-
-    const visible = new Set();
-    for (const g of selectedGroups) {
-      const list = EXERCISES_BY_GROUP[g] || [];
-      for (const ex of list) visible.add(ex);
-    }
-
-    setSelectedExercises((prev) => new Set(Array.from(prev).filter((e) => visible.has(e))));
-    setExerciseMeta((prev) => {
-      const next = {};
-      for (const [ex, meta] of Object.entries(prev)) {
-        if (visible.has(ex)) next[ex] = meta;
-      }
-      return next;
-    });
-  }, [selectedGroups]);
-
   return (
     <main className="app">
       <header className="header">
@@ -215,7 +194,9 @@ export default function App() {
         <div className="panel">
           <div className="panel-head">
             <h2 className="panel-title">Template</h2>
-            <p className="panel-hint">Add a workout: pick a muscle group, then exercises.</p>
+            <p className="panel-hint">
+              Add a workout: pick a muscle group, tap exercises, then set weight and reps below.
+            </p>
           </div>
           <div className="template" aria-live="polite">
             {templateItems.length === 0 ? (
@@ -252,7 +233,7 @@ export default function App() {
                 <div>
                   <div className="modal-kicker">Add workout</div>
                   <h3 className="modal-title" id="modalTitle">
-                    Pick muscle groups and exercises
+                    Pick a group, tap exercises to add
                   </h3>
                 </div>
                 <button
@@ -269,20 +250,13 @@ export default function App() {
                 <div className="grid">
                   {MUSCLE_GROUPS.map((g) => {
                     const count = (EXERCISES_BY_GROUP[g] || []).length;
-                    const isSelected = selectedGroups.has(g);
+                    const isSelected = activeGroup === g;
                     return (
                       <button
                         key={g}
                         type="button"
                         className={`choice ${isSelected ? "selected" : ""}`}
-                        onClick={() => {
-                          setSelectedGroups((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(g)) next.delete(g);
-                            else next.add(g);
-                            return next;
-                          });
-                        }}
+                        onClick={() => setActiveGroup(g)}
                       >
                         <div className="choice-title">{g}</div>
                         <div className="choice-sub">{count > 0 ? `${count} exercises` : ""}</div>
@@ -293,60 +267,73 @@ export default function App() {
 
                 <div style={{ height: 10 }} />
 
-                {selectedGroups.size === 0 ? (
-                  <div className="note">Click one or more muscle groups to see exercises.</div>
-                ) : visibleExercisesAll.length === 0 ? (
-                  <div className="note">No exercises for the selected muscle groups yet.</div>
+                {!activeGroup ? (
+                  <div className="note">Choose a muscle group to see exercises you can add.</div>
+                ) : pickerExercises.length === 0 ? (
+                  <div className="note">No exercises for this group yet.</div>
                 ) : (
-                  <div className="grouped">
-                    {selectedGroupList.map((groupName) => {
-                      const list = EXERCISES_BY_GROUP[groupName] || [];
-                      return (
-                        <section className="groupSection" key={groupName}>
-                          <div className="groupHeader">{groupName}</div>
-                          {list.length === 0 ? (
-                            <div className="note">No exercises yet.</div>
-                          ) : (
-                            <div className="checks">
-                              {list.map((ex) => (
-                                <div className="exerciseRow" key={`${groupName}:${ex}`}>
-                                  <label className="exerciseLeft">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedExercises.has(ex)}
-                                      onChange={(e) => toggleExercise(ex, e.target.checked)}
-                                    />
-                                    <span className="check-text">{ex}</span>
-                                  </label>
-                                  <div className="exerciseFields">
-                                    <input
-                                      className="numField"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      maxLength={4}
-                                      placeholder="Weight"
-                                      value={exerciseMeta[ex]?.weight || ""}
-                                      onChange={(e) => setExerciseField(ex, "weight", e.target.value)}
-                                    />
-                                    <input
-                                      className="numField"
-                                      inputMode="numeric"
-                                      pattern="[0-9]*"
-                                      maxLength={4}
-                                      placeholder="Reps"
-                                      value={exerciseMeta[ex]?.reps || ""}
-                                      onChange={(e) => setExerciseField(ex, "reps", e.target.value)}
-                                    />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </section>
-                      );
-                    })}
-                  </div>
+                  <section className="groupSection" aria-label={`Exercises for ${activeGroup}`}>
+                    <div className="groupHeader">{activeGroup} — tap to add</div>
+                    <div className="pickerList">
+                      {pickerExercises.map((ex) => (
+                        <button
+                          key={ex}
+                          type="button"
+                          className="exercisePick"
+                          onClick={() => addExerciseFromPicker(activeGroup, ex)}
+                        >
+                          {ex}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 )}
+
+                {draftLines.length > 0 ? (
+                  <>
+                    <div style={{ height: 16 }} />
+                    <section className="groupSection" aria-label="Current workout">
+                      <div className="groupHeader">Your workout</div>
+                      <div className="checks">
+                        {draftLines.map((line) => (
+                          <div className="exerciseRow" key={line.id}>
+                            <div className="exerciseNameCell">
+                              <span className="check-text">{line.name}</span>
+                            </div>
+                            <div className="exerciseFields">
+                              <input
+                                className="numField"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={4}
+                                placeholder="Weight"
+                                value={exerciseMeta[line.id]?.weight || ""}
+                                onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
+                              />
+                              <input
+                                className="numField"
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                maxLength={4}
+                                placeholder="Reps"
+                                value={exerciseMeta[line.id]?.reps || ""}
+                                onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className="rowRemove"
+                              aria-label={`Remove ${line.name}`}
+                              onClick={() => removeDraftLine(line.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  </>
+                ) : null}
               </div>
 
               <div className="modal-foot">
