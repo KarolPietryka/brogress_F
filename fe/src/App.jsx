@@ -11,34 +11,30 @@ const workoutClient = new WorkoutClient();
 
 function mapServerWorkout(w) {
   const bodyParts = w.bodyPart || [];
-  const groups = bodyParts.map(
-    (bp) => BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName
-  );
-  const exercises = bodyParts.flatMap((bp) =>
-    (bp.exercises || []).map((e) => ({
+  const rows = bodyParts.flatMap((bp) => {
+    const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
+    return (bp.exercises || []).map((e) => ({
+      group,
       name: e.name,
       weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
       reps: e.reps != null ? String(e.reps) : "",
-    }))
-  );
+    }));
+  });
   return {
     id: w.id,
-    groups,
-    exercises,
-    createdAt: new Date(`${w.workoutDate}T12:00:00`).getTime(),
+    workoutDate: w.workoutDate,
+    rows,
   };
 }
 
-function formatTime(ts) {
+function formatWorkoutDate(isoDate) {
+  if (!isoDate) return "";
   try {
-    return new Intl.DateTimeFormat("pl-PL", {
-      hour: "2-digit",
-      minute: "2-digit",
-      day: "2-digit",
-      month: "2-digit",
-    }).format(new Date(ts));
+    return new Intl.DateTimeFormat("pl-PL", { dateStyle: "medium" }).format(
+      new Date(`${isoDate}T12:00:00`)
+    );
   } catch {
-    return "";
+    return String(isoDate);
   }
 }
 
@@ -281,14 +277,17 @@ export default function App() {
             {templateItems.map((item) => (
               <div className="card" key={item.id}>
                 <div className="card-top">
-                  <div className="card-title">{item.groups.join(" + ")}</div>
-                  <div className="card-meta">{formatTime(item.createdAt)}</div>
+                  <div className="card-title">{formatWorkoutDate(item.workoutDate)}</div>
                 </div>
-                <div className="tags">
-                  {item.exercises.map((e, idx) => (
-                    <span className="tag" key={`${item.id}-${idx}-${e.name}`}>
-                      {e.weight && e.reps ? `${e.name} ${e.weight}x${e.reps}` : e.name}
-                    </span>
+                <div className="workoutRows">
+                  {item.rows.map((row, idx) => (
+                    <div className="workoutRow" key={`${item.id}-${idx}`}>
+                      <span className="workoutRowGroup">{row.group}</span>
+                      <span className="workoutRowName">{row.name}</span>
+                      <span className="workoutRowStats" aria-label="Ciężar i powtórzenia">
+                        {row.weight && row.reps ? `${row.weight} × ${row.reps}` : "—"}
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
