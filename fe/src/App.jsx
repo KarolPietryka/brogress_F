@@ -156,7 +156,7 @@ export default function App() {
     console.info("POST /workout payload", request);
 
     try {
-      const res = await workoutClient.post(request);
+      const res = await workoutClient.postWorkouts(request);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");

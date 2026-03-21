@@ -1,12 +1,35 @@
-const WORKOUT_URL = "http://localhost:8080/workout";
+
+const WORKOUT_URL = "http://localhost:8080";
 
 export class WorkoutClient {
   /**
-   * @param {object} body — obiekt do JSON.stringify (np. WorkoutSubmitRequest)
-   * @returns {Promise<Response>}
+   * Sends a POST request to submit workout data.
+   *
+   * Example JSON body:
+   * {
+   *   "bodyPart": [
+   *     {
+   *       "bodyPartName": "chest",
+   *       "exercises": [
+   *         { "name": "Bench Press", "weight": 100, "reps": 10 },
+   *         { "name": "Push-ups", "weight": 0, "reps": 20 }
+   *       ]
+   *     },
+   *     {
+   *       "bodyPartName": "back",
+   *       "exercises": [
+   *         { "name": "Pull-ups", "weight": 0, "reps": 12 }
+   *       ]
+   *     }
+   *   ]
+   * }
+   *
+   * @param {object} body - The object to be converted to JSON (e.g., WorkoutSubmitRequest).
+   * @returns {Promise<Response>} - A promise resolving to the response from the server.
    */
-  post(body) {
-    return fetch(WORKOUT_URL, {
+  postWorkouts(body) {
+    const url = `${WORKOUT_URL}/workout`;
+    return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
