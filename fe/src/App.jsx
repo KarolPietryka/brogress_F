@@ -1,9 +1,33 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { BODY_PART_API_NAME, EXERCISES_BY_GROUP, MUSCLE_GROUPS } from "./workoutData.js";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BODY_PART_API_NAME,
+  BODY_PART_TO_GROUP_LABEL,
+  MUSCLE_GROUPS,
+} from "./workoutData.js";
 import { WorkoutClient } from "./workoutClient.js";
 import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 
 const workoutClient = new WorkoutClient();
+
+function mapServerWorkout(w) {
+  const bodyParts = w.bodyPart || [];
+  const groups = bodyParts.map(
+    (bp) => BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName
+  );
+  const exercises = bodyParts.flatMap((bp) =>
+    (bp.exercises || []).map((e) => ({
+      name: e.name,
+      weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
+      reps: e.reps != null ? String(e.reps) : "",
+    }))
+  );
+  return {
+    id: w.id,
+    groups,
+    exercises,
+    createdAt: new Date(`${w.workoutDate}T12:00:00`).getTime(),
+  };
+}
 
 function formatTime(ts) {
   try {
@@ -43,13 +67,65 @@ export default function App() {
   const [draftLines, setDraftLines] = useState([]);
   const [exerciseMeta, setExerciseMeta] = useState(() => ({})); // { [lineId]: { weight, reps } }
   const [templateItems, setTemplateItems] = useState([]);
+  const [exercisesByGroup, setExercisesByGroup] = useState(() => ({}));
+  const [catalogError, setCatalogError] = useState("");
+  const [templateLoadError, setTemplateLoadError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
 
+  const refreshWorkoutsFromServer = useCallback(async () => {
+    const woRes = await workoutClient.getWorkouts();
+    if (!woRes.ok) {
+      const text = await woRes.text().catch(() => "");
+      throw new Error(text || `HTTP ${woRes.status}`);
+    }
+    const list = await woRes.json();
+    setTemplateItems(Array.isArray(list) ? list.map(mapServerWorkout) : []);
+    setTemplateLoadError("");
+  }, []);
+
+  const loadExerciseCatalog = useCallback(async () => {
+    const catRes = await workoutClient.getExerciseCatalog();
+    if (!catRes.ok) {
+      const text = await catRes.text().catch(() => "");
+      throw new Error(text || `HTTP ${catRes.status}`);
+    }
+    const cat = await catRes.json();
+    setExercisesByGroup(cat && typeof cat === "object" ? cat : {});
+    setCatalogError("");
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadExerciseCatalog();
+      } catch (e) {
+        if (!cancelled) {
+          setCatalogError(
+            `Nie udało się pobrać katalogu ćwiczeń (${e instanceof Error ? e.message : "unknown error"}).`
+          );
+        }
+      }
+      try {
+        await refreshWorkoutsFromServer();
+      } catch (e) {
+        if (!cancelled) {
+          setTemplateLoadError(
+            `Nie udało się pobrać treningów (${e instanceof Error ? e.message : "unknown error"}).`
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loadExerciseCatalog, refreshWorkoutsFromServer]);
+
   const pickerExercises = useMemo(() => {
     if (!activeGroup) return [];
-    return EXERCISES_BY_GROUP[activeGroup] || [];
-  }, [activeGroup]);
+    return exercisesByGroup[activeGroup] || [];
+  }, [activeGroup, exercisesByGroup]);
 
   const canSend = useMemo(() => draftLines.length > 0, [draftLines]);
 
@@ -125,13 +201,6 @@ export default function App() {
     setIsSubmitting(true);
     setSubmitError("");
 
-    const groups = [...new Set(draftLines.map((l) => l.group))];
-    const exercises = draftLines.map((line) => ({
-      name: line.name,
-      weight: exerciseMeta[line.id]?.weight || "",
-      reps: exerciseMeta[line.id]?.reps || "",
-    }));
-
     const request = new WorkoutSubmitRequest();
     const groupOrder = [];
     const byGroup = new Map();
@@ -163,8 +232,14 @@ export default function App() {
         throw new Error(text || `HTTP ${res.status}`);
       }
 
-      setTemplateItems((prev) => [...prev, { groups, exercises, createdAt: Date.now() }]);
       closeModal();
+      try {
+        await refreshWorkoutsFromServer();
+      } catch (e2) {
+        setTemplateLoadError(
+          `Trening zapisany, ale lista nie odświeżyła się (${e2 instanceof Error ? e2.message : "unknown error"}).`
+        );
+      }
     } catch (e) {
       setSubmitError(
         `Failed to POST to http://localhost:8080/workout (${e instanceof Error ? e.message : "unknown error"})`
@@ -197,27 +272,27 @@ export default function App() {
             </p>
           </div>
           <div className="template" aria-live="polite">
-            {templateItems.length === 0 ? (
+            {templateLoadError ? <div className="errorText">{templateLoadError}</div> : null}
+            {templateItems.length === 0 && !templateLoadError ? (
               <div className="empty">
                 Nothing here yet. Click <span className="pill">Add workout</span>.
               </div>
-            ) : (
-              templateItems.map((item) => (
-                <div className="card" key={`${item.createdAt}-${item.groups.join("+")}`}>
-                  <div className="card-top">
-                    <div className="card-title">{item.groups.join(" + ")}</div>
-                    <div className="card-meta">{formatTime(item.createdAt)}</div>
-                  </div>
-                  <div className="tags">
-                    {item.exercises.map((e) => (
-                      <span className="tag" key={e.name}>
-                        {e.weight && e.reps ? `${e.name} ${e.weight}x${e.reps}` : e.name}
-                      </span>
-                    ))}
-                  </div>
+            ) : null}
+            {templateItems.map((item) => (
+              <div className="card" key={item.id}>
+                <div className="card-top">
+                  <div className="card-title">{item.groups.join(" + ")}</div>
+                  <div className="card-meta">{formatTime(item.createdAt)}</div>
                 </div>
-              ))
-            )}
+                <div className="tags">
+                  {item.exercises.map((e, idx) => (
+                    <span className="tag" key={`${item.id}-${idx}-${e.name}`}>
+                      {e.weight && e.reps ? `${e.name} ${e.weight}x${e.reps}` : e.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </section>
@@ -245,9 +320,10 @@ export default function App() {
               </div>
 
               <div className="modal-body">
+                {catalogError ? <div className="errorText">{catalogError}</div> : null}
                 <div className="grid">
                   {MUSCLE_GROUPS.map((g) => {
-                    const count = (EXERCISES_BY_GROUP[g] || []).length;
+                    const count = (exercisesByGroup[g] || []).length;
                     const isSelected = activeGroup === g;
                     return (
                       <button

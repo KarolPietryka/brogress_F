@@ -35,4 +35,12 @@ export class WorkoutClient {
       body: JSON.stringify(body),
     });
   }
+
+  getExerciseCatalog() {
+    return fetch(`${WORKOUT_URL}/workout/exercise-catalog`);
+  }
+
+  getWorkouts() {
+    return fetch(`${WORKOUT_URL}/workout`);
+  }
 }
