@@ -1,5 +1,6 @@
-
-const WORKOUT_URL = "http://localhost:8080";
+/** Ustaw na Renderze (Static Site): Environment → `VITE_WORKOUT_API_URL` = publiczny URL BE (bez końcowego `/`). */
+export const WORKOUT_API_BASE =
+  import.meta.env.VITE_WORKOUT_API_URL ?? "http://localhost:8080";
 
 export class WorkoutClient {
   /**
@@ -28,7 +29,7 @@ export class WorkoutClient {
    * @returns {Promise<Response>} - A promise resolving to the response from the server.
    */
   postWorkouts(body) {
-    const url = `${WORKOUT_URL}/workout`;
+    const url = `${WORKOUT_API_BASE}/workout`;
     return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -37,10 +38,10 @@ export class WorkoutClient {
   }
 
   getExerciseCatalog() {
-    return fetch(`${WORKOUT_URL}/workout/exercise-catalog`);
+    return fetch(`${WORKOUT_API_BASE}/workout/exercise-catalog`);
   }
 
   getWorkouts() {
-    return fetch(`${WORKOUT_URL}/workout`);
+    return fetch(`${WORKOUT_API_BASE}/workout`);
   }
 }

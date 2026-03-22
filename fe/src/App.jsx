@@ -4,7 +4,7 @@ import {
   BODY_PART_TO_GROUP_LABEL,
   MUSCLE_GROUPS,
 } from "./workoutData.js";
-import { WorkoutClient } from "./workoutClient.js";
+import { WorkoutClient, WORKOUT_API_BASE } from "./workoutClient.js";
 import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 
 const workoutClient = new WorkoutClient();
@@ -238,7 +238,7 @@ export default function App() {
       }
     } catch (e) {
       setSubmitError(
-        `Failed to POST to http://localhost:8080/workout (${e instanceof Error ? e.message : "unknown error"})`
+        `Failed to POST to ${WORKOUT_API_BASE}/workout (${e instanceof Error ? e.message : "unknown error"})`
       );
       setIsSubmitting(false);
     }
