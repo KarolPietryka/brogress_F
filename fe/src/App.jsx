@@ -139,6 +139,8 @@ export default function App() {
   }, [isOpen]);
 
   function openModal() {
+    // Trigger prefill as soon as user starts adding a workout (no response handling).
+    void workoutClient.prefillWorkout().catch(() => {});
     setIsOpen(true);
     setActiveGroup(null);
     setDraftLines([]);

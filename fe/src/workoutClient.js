@@ -44,4 +44,9 @@ export class WorkoutClient {
   getWorkouts() {
     return fetch(`${WORKOUT_API_BASE}/workout`);
   }
+
+  prefillWorkout() {
+    // Fire-and-forget; response handling is intentionally left to caller.
+    return fetch(`${WORKOUT_API_BASE}/workout/prefill`, { method: "GET" });
+  }
 }
