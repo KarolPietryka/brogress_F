@@ -11,15 +11,19 @@ const workoutClient = new WorkoutClient();
 
 function mapServerWorkout(w) {
   const bodyParts = w.bodyPart || [];
-  const rows = bodyParts.flatMap((bp) => {
-    const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
-    return (bp.exercises || []).map((e) => ({
-      group,
-      name: e.name,
-      weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
-      reps: e.reps != null ? String(e.reps) : "",
-    }));
-  });
+  const rows = bodyParts
+    .flatMap((bp) => {
+      const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
+      return (bp.exercises || []).map((e) => ({
+        orderId: e.orderId ?? 0,
+        group,
+        name: e.name,
+        weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
+        reps: e.reps != null ? String(e.reps) : "",
+      }));
+    })
+    .sort((a, b) => a.orderId - b.orderId)
+    .map(({ orderId: _o, ...row }) => row);
   return {
     id: w.id,
     workoutDate: w.workoutDate,
@@ -33,18 +37,23 @@ function mapPrefillToDraft(prefill) {
   if (!Array.isArray(bodyParts) || bodyParts.length === 0) {
     return { draftLines: [], exerciseMeta: {} };
   }
-  const draftLines = [];
-  const exerciseMeta = {};
+  const flat = [];
   for (const bp of bodyParts) {
     const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
     for (const ex of bp.exercises || []) {
-      const id = newDraftLineId();
-      draftLines.push({ id, group, name: ex.name });
-      exerciseMeta[id] = {
-        weight: prefillNumberToDigitsField(ex.weight),
-        reps: prefillNumberToDigitsField(ex.reps),
-      };
+      flat.push({ group, ex });
     }
+  }
+  flat.sort((a, b) => (a.ex.orderId ?? 0) - (b.ex.orderId ?? 0));
+  const draftLines = [];
+  const exerciseMeta = {};
+  for (const { group, ex } of flat) {
+    const id = newDraftLineId();
+    draftLines.push({ id, group, name: ex.name });
+    exerciseMeta[id] = {
+      weight: prefillNumberToDigitsField(ex.weight),
+      reps: prefillNumberToDigitsField(ex.reps),
+    };
   }
   return { draftLines, exerciseMeta };
 }
@@ -245,23 +254,15 @@ export default function App() {
     setSubmitError("");
 
     const request = new WorkoutSubmitRequest();
-    const groupOrder = [];
-    const byGroup = new Map();
-    for (const line of draftLines) {
-      if (!byGroup.has(line.group)) {
-        byGroup.set(line.group, []);
-        groupOrder.push(line.group);
-      }
+    /** One bodyPart block per draft line so global order matches the UI (same as prefill). */
+    request.bodyPart = draftLines.map((line) => {
+      const block = new WorkoutBodyPart();
+      block.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
       const row = new WorkoutExercise();
       row.name = line.name;
       row.weight = parseIntOrNull(exerciseMeta[line.id]?.weight || "");
       row.reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
-      byGroup.get(line.group).push(row);
-    }
-    request.bodyPart = groupOrder.map((groupName) => {
-      const block = new WorkoutBodyPart();
-      block.bodyPartName = BODY_PART_API_NAME[groupName] || String(groupName).toLowerCase();
-      block.exercises = byGroup.get(groupName);
+      block.exercises = [row];
       return block;
     });
 

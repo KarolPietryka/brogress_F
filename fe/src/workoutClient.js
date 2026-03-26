@@ -46,7 +46,7 @@ export class WorkoutClient {
   }
 
   /**
-   * GET /workout/prefill — JSON `{ bodyPart: [{ bodyPartName, exercises: [{ name, weight, reps }] }] }`
+   * GET /workout/prefill — JSON `{ bodyPart: [{ bodyPartName, exercises: [{ name, orderId, weight, reps }] }] }`
    * or empty `bodyPart` when there is nothing to clone.
    */
   prefillWorkout() {
