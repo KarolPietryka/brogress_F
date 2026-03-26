@@ -522,6 +522,19 @@ body {
   gap: 14px;
 }
 
+.groupHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 2px 10px;
+  flex-wrap: wrap;
+}
+
+.groupHeaderRow .groupHeader {
+  margin: 0;
+}
+
 .groupHeader {
   font-family: var(--mono);
   font-size: 11px;
@@ -529,6 +542,23 @@ body {
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.7);
   margin: 2px 2px 10px;
+}
+
+.btn-compact {
+  padding: 7px 12px;
+  font-size: 12px;
+  border-radius: 10px;
+}
+
+.btn-danger-text {
+  border-color: rgba(255, 120, 130, 0.35);
+  color: rgba(255, 170, 175, 0.95);
+  background: rgba(255, 80, 100, 0.08);
+}
+
+.btn-danger-text:hover:not(:disabled) {
+  border-color: rgba(255, 140, 150, 0.55);
+  background: rgba(255, 80, 100, 0.14);
 }
 
 .errorText {

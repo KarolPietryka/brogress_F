@@ -227,6 +227,12 @@ export default function App() {
     });
   }
 
+  function clearEntireDraft() {
+    setDraftLines([]);
+    setExerciseMeta({});
+    setSubmitError("");
+  }
+
   function setExerciseField(lineId, field, raw) {
     const value = digits4(raw);
     setExerciseMeta((prev) => ({
@@ -414,7 +420,18 @@ export default function App() {
                   <>
                     <div style={{ height: 16 }} />
                     <section className="groupSection" aria-label="Current workout">
-                      <div className="groupHeader">Your workout</div>
+                      <div className="groupHeaderRow">
+                        <div className="groupHeader">Your workout</div>
+                        <button
+                          type="button"
+                          className="btn btn-compact btn-danger-text"
+                          disabled={isSubmitting}
+                          onClick={clearEntireDraft}
+                          aria-label="Wyczyść cały prefill z listy"
+                        >
+                          Wyczyść prefill
+                        </button>
+                      </div>
                       <div className="checks">
                         {draftLines.map((line) => (
                           <div className="exerciseRow" key={line.id}>
