@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BODY_PART_API_NAME,
   BODY_PART_TO_GROUP_LABEL,
@@ -25,6 +25,35 @@ function mapServerWorkout(w) {
     workoutDate: w.workoutDate,
     rows,
   };
+}
+
+/** Maps GET /workout/prefill JSON to modal draft state (same shape as manual picks + meta). */
+function mapPrefillToDraft(prefill) {
+  const bodyParts = prefill?.bodyPart;
+  if (!Array.isArray(bodyParts) || bodyParts.length === 0) {
+    return { draftLines: [], exerciseMeta: {} };
+  }
+  const draftLines = [];
+  const exerciseMeta = {};
+  for (const bp of bodyParts) {
+    const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
+    for (const ex of bp.exercises || []) {
+      const id = newDraftLineId();
+      draftLines.push({ id, group, name: ex.name });
+      exerciseMeta[id] = {
+        weight: prefillNumberToDigitsField(ex.weight),
+        reps: prefillNumberToDigitsField(ex.reps),
+      };
+    }
+  }
+  return { draftLines, exerciseMeta };
+}
+
+function prefillNumberToDigitsField(value) {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+  return digits4(String(Math.round(n)));
 }
 
 function formatWorkoutDate(isoDate) {
@@ -56,6 +85,7 @@ function newDraftLineId() {
 }
 
 export default function App() {
+  const openModalInFlight = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
   /** Which muscle group's exercise list is shown in the picker (single). */
   const [activeGroup, setActiveGroup] = useState(null);
@@ -138,15 +168,30 @@ export default function App() {
     document.body.style.overflow = isOpen ? "hidden" : "";
   }, [isOpen]);
 
-  function openModal() {
-    // Trigger prefill as soon as user starts adding a workout (no response handling).
-    void workoutClient.prefillWorkout().catch(() => {});
-    setIsOpen(true);
+  async function openModal() {
+    if (openModalInFlight.current) return;
+    openModalInFlight.current = true;
     setActiveGroup(null);
-    setDraftLines([]);
-    setExerciseMeta({});
     setIsSubmitting(false);
     setSubmitError("");
+
+    let draftLines = [];
+    let exerciseMeta = {};
+    try {
+      const res = await workoutClient.prefillWorkout();
+      if (res.ok) {
+        const data = await res.json();
+        ({ draftLines, exerciseMeta } = mapPrefillToDraft(data));
+      }
+    } catch {
+      /* keep empty draft */
+    } finally {
+      openModalInFlight.current = false;
+    }
+
+    setDraftLines(draftLines);
+    setExerciseMeta(exerciseMeta);
+    setIsOpen(true);
   }
 
   function closeModal() {

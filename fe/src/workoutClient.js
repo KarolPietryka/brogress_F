@@ -45,8 +45,11 @@ export class WorkoutClient {
     return fetch(`${WORKOUT_API_BASE}/workout`);
   }
 
+  /**
+   * GET /workout/prefill — JSON `{ bodyPart: [{ bodyPartName, exercises: [{ name, weight, reps }] }] }`
+   * or empty `bodyPart` when there is nothing to clone.
+   */
   prefillWorkout() {
-    // Fire-and-forget; response handling is intentionally left to caller.
     return fetch(`${WORKOUT_API_BASE}/workout/prefill`, { method: "GET" });
   }
 }
