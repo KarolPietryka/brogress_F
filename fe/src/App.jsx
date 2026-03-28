@@ -416,62 +416,67 @@ export default function App() {
                   </section>
                 )}
 
-                {draftLines.length > 0 ? (
-                  <>
-                    <div style={{ height: 16 }} />
-                    <section className="groupSection" aria-label="Current workout">
-                      <div className="groupHeaderRow">
-                        <div className="groupHeader">Your workout</div>
-                        <button
-                          type="button"
-                          className="btn btn-compact btn-danger-text"
-                          disabled={isSubmitting}
-                          onClick={clearEntireDraft}
-                          aria-label="Wyczyść cały prefill z listy"
-                        >
-                          Wyczyść prefill
-                        </button>
-                      </div>
-                      <div className="checks">
-                        {draftLines.map((line) => (
-                          <div className="exerciseRow" key={line.id}>
-                            <div className="exerciseNameCell">
-                              <span className="check-text">{line.name}</span>
-                            </div>
-                            <div className="exerciseFields">
-                              <input
-                                className="numField"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                maxLength={4}
-                                placeholder="Weight"
-                                value={exerciseMeta[line.id]?.weight || ""}
-                                onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
-                              />
-                              <input
-                                className="numField"
-                                inputMode="numeric"
-                                pattern="[0-9]*"
-                                maxLength={4}
-                                placeholder="Reps"
-                                value={exerciseMeta[line.id]?.reps || ""}
-                                onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              className="rowRemove"
-                              aria-label={`Remove ${line.name}`}
-                              onClick={() => removeDraftLine(line.id)}
-                            >
-                              ×
-                            </button>
+                <div style={{ height: 16 }} />
+                <section className="groupSection" aria-label="Current workout">
+                  <div className="groupHeaderRow">
+                    <div className="groupHeader">Your workout</div>
+                    {draftLines.length > 0 ? (
+                      <button
+                        type="button"
+                        className="btn btn-compact btn-danger-text"
+                        disabled={isSubmitting}
+                        onClick={clearEntireDraft}
+                        aria-label="Wyczyść cały prefill z listy"
+                      >
+                        Wyczyść prefill
+                      </button>
+                    ) : null}
+                  </div>
+                  {draftLines.length > 0 ? (
+                    <div className="checks">
+                      {draftLines.map((line) => (
+                        <div className="exerciseRow" key={line.id}>
+                          <div className="exerciseNameCell">
+                            <span className="muscleTag" title="Partia">
+                              {line.group}
+                            </span>
+                            <span className="check-text">{line.name}</span>
                           </div>
-                        ))}
-                      </div>
-                    </section>
-                  </>
-                ) : null}
+                          <div className="exerciseFields">
+                            <input
+                              className="numField"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={4}
+                              placeholder="Weight"
+                              value={exerciseMeta[line.id]?.weight || ""}
+                              onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
+                            />
+                            <input
+                              className="numField"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              maxLength={4}
+                              placeholder="Reps"
+                              value={exerciseMeta[line.id]?.reps || ""}
+                              onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="rowRemove"
+                            aria-label={`Remove ${line.name}`}
+                            onClick={() => removeDraftLine(line.id)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="note">Nothing here yet.</div>
+                  )}
+                </section>
               </div>
 
               <div className="modal-foot">
