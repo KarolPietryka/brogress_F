@@ -46,8 +46,7 @@ export class WorkoutClient {
   }
 
   /**
-   * GET /workout/prefill — JSON `{ bodyPart: [{ bodyPartName, exercises: [{ name, orderId, weight, reps }] }] }`
-   * or empty `bodyPart` when there is nothing to clone.
+   * GET /workout/prefill — `bodyPart[].exercises[]` zawiera m.in. `planned` (plan na dziś vs klon ostatniej sesji).
    */
   prefillWorkout() {
     return fetch(`${WORKOUT_API_BASE}/workout/prefill`, { method: "GET" });

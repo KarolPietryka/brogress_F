@@ -9,19 +9,29 @@ import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./model/
 
 const workoutClient = new WorkoutClient();
 
+function exerciseToRow(group, e) {
+  return {
+    orderId: e.orderId ?? 0,
+    group,
+    name: e.name,
+    weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
+    reps: e.reps != null ? String(e.reps) : "",
+    planned: e.planned === true,
+  };
+}
+
+function flattenBodyPartRows(blockList) {
+  return (blockList || []).flatMap((bp) => {
+    const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
+    return (bp.exercises || []).map((e) => exerciseToRow(group, e));
+  });
+}
+
+/** GET /workout: scala wykonane + plan (dzisiaj), sort po orderId; {@code planned} z API do stylowania. */
 function mapServerWorkout(w) {
-  const bodyParts = w.bodyPart || [];
-  const rows = bodyParts
-    .flatMap((bp) => {
-      const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
-      return (bp.exercises || []).map((e) => ({
-        orderId: e.orderId ?? 0,
-        group,
-        name: e.name,
-        weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
-        reps: e.reps != null ? String(e.reps) : "",
-      }));
-    })
+  const executed = flattenBodyPartRows(w.bodyPart);
+  const planned = flattenBodyPartRows(w.exercisePlan);
+  const rows = [...executed, ...planned]
     .sort((a, b) => a.orderId - b.orderId)
     .map(({ orderId: _o, ...row }) => row);
   return {
@@ -49,7 +59,7 @@ function mapPrefillToDraft(prefill) {
   const exerciseMeta = {};
   for (const { group, ex } of flat) {
     const id = newDraftLineId();
-    draftLines.push({ id, group, name: ex.name });
+    draftLines.push({ id, group, name: ex.name, planned: ex.planned === true });
     exerciseMeta[id] = {
       weight: prefillNumberToDigitsField(ex.weight),
       reps: prefillNumberToDigitsField(ex.reps),
@@ -211,7 +221,7 @@ export default function App() {
 
   function addExerciseFromPicker(groupName, exerciseName) {
     const id = newDraftLineId();
-    setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName }]);
+    setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName, planned: false }]);
     setExerciseMeta((prev) => ({
       ...prev,
       [id]: { weight: "", reps: "" },
@@ -335,7 +345,10 @@ export default function App() {
                 </div>
                 <div className="workoutRows">
                   {item.rows.map((row, idx) => (
-                    <div className="workoutRow" key={`${item.id}-${idx}`}>
+                    <div
+                      className={`workoutRow${row.planned ? " workoutRow--planned" : ""}`}
+                      key={`${item.id}-${idx}`}
+                    >
                       <span className="workoutRowGroup">{row.group}</span>
                       <span className="workoutRowName">{row.name}</span>
                       <span className="workoutRowStats" aria-label="Ciężar i powtórzenia">
@@ -435,7 +448,10 @@ export default function App() {
                   {draftLines.length > 0 ? (
                     <div className="checks">
                       {draftLines.map((line) => (
-                        <div className="exerciseRow" key={line.id}>
+                        <div
+                          className={`exerciseRow${line.planned ? " exerciseRow--planned" : ""}`}
+                          key={line.id}
+                        >
                           <div className="exerciseNameCell">
                             <span className="muscleTag" title="Partia">
                               {line.group}

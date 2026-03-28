@@ -452,6 +452,12 @@ body {
   min-height: 46px;
 }
 
+.exerciseRow--planned {
+  border-style: dashed;
+  border-color: rgba(255, 207, 90, 0.38);
+  background: rgba(255, 207, 90, 0.07);
+}
+
 .exerciseNameCell {
   flex: 1;
   min-width: 0;
@@ -660,6 +666,16 @@ body {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.75);
   margin-top: auto;
+}
+
+.workoutRow--planned {
+  border-style: dashed;
+  border-color: rgba(255, 207, 90, 0.35);
+  background: rgba(255, 207, 90, 0.06);
+}
+
+.workoutRow--planned .workoutRowGroup {
+  color: rgba(255, 207, 90, 0.75);
 }
 
 @media (max-width: 900px) {
