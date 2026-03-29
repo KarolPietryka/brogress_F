@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   BODY_PART_API_NAME,
   BODY_PART_TO_GROUP_LABEL,
@@ -139,6 +139,9 @@ function newDraftLineId() {
 
 const DRAFT_DND_TYPE = "application/x-brogress-draft-index";
 
+const DRAFT_FLIP_MS = 320;
+const DRAFT_FLIP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
 /** Reorder so the item at {@code fromIndex} ends up immediately before the row that was at {@code toIndex} (drop target). */
 function reorderDraftIndices(lines, fromIndex, toIndex) {
   if (
@@ -173,6 +176,10 @@ export default function App() {
   const [submitError, setSubmitError] = useState("");
   /** Drop-target row index while reordering "Your workout" (drag handle only). */
   const [draftDragOverIndex, setDraftDragOverIndex] = useState(null);
+  /** Source row index while HTML5 drag is active (visual “lift”). */
+  const [draftDraggingIndex, setDraftDraggingIndex] = useState(null);
+  const draftFlipContainerRef = useRef(null);
+  const prevDraftLayoutRef = useRef(new Map());
 
   const refreshWorkoutsFromServer = useCallback(async () => {
     const woRes = await workoutClient.getWorkouts();
@@ -243,6 +250,68 @@ export default function App() {
     document.body.style.overflow = isOpen ? "hidden" : "";
   }, [isOpen]);
 
+  // FLIP: after reorder, animate rows from previous positions to the new layout.
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      prevDraftLayoutRef.current = new Map();
+      return;
+    }
+    const container = draftFlipContainerRef.current;
+    if (!container || draftLines.length === 0) {
+      prevDraftLayoutRef.current = new Map();
+      return;
+    }
+    const rowEls = container.querySelectorAll("[data-draft-row-id]");
+    const nextRects = new Map();
+    for (const el of rowEls) {
+      const id = el.getAttribute("data-draft-row-id");
+      if (id) nextRects.set(id, el.getBoundingClientRect());
+    }
+    const prev = prevDraftLayoutRef.current;
+    const canFlip =
+      prev.size > 0 &&
+      prev.size === nextRects.size &&
+      [...nextRects.keys()].every((id) => prev.has(id));
+
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+
+    if (canFlip && !reduceMotion) {
+      for (const el of rowEls) {
+        const id = el.getAttribute("data-draft-row-id");
+        const oldR = id ? prev.get(id) : null;
+        const newR = id ? nextRects.get(id) : null;
+        if (!oldR || !newR) continue;
+        const dx = oldR.left - newR.left;
+        const dy = oldR.top - newR.top;
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+        el.style.transition = "none";
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
+        el.getBoundingClientRect();
+        requestAnimationFrame(() => {
+          const clearFlipStyles = () => {
+            el.style.transition = "";
+            el.style.transform = "";
+          };
+          el.style.transition = `transform ${DRAFT_FLIP_MS}ms ${DRAFT_FLIP_EASING}`;
+          el.style.transform = "";
+          const onEnd = (ev) => {
+            if (ev.propertyName !== "transform") return;
+            el.removeEventListener("transitionend", onEnd);
+            clearFlipStyles();
+          };
+          el.addEventListener("transitionend", onEnd);
+          window.setTimeout(() => {
+            el.removeEventListener("transitionend", onEnd);
+            clearFlipStyles();
+          }, DRAFT_FLIP_MS + 80);
+        });
+      }
+    }
+    prevDraftLayoutRef.current = nextRects;
+  }, [draftLines, isOpen]);
+
   async function openModal() {
     if (openModalInFlight.current) return;
     openModalInFlight.current = true;
@@ -274,6 +343,7 @@ export default function App() {
     setIsSubmitting(false);
     setSubmitError("");
     setDraftDragOverIndex(null);
+    setDraftDraggingIndex(null);
   }
 
   function addExerciseFromPicker(groupName, exerciseName) {
@@ -299,6 +369,7 @@ export default function App() {
     setExerciseMeta({});
     setSubmitError("");
     setDraftDragOverIndex(null);
+    setDraftDraggingIndex(null);
   }
 
   function moveDraftLine(fromIndex, toIndex) {
@@ -510,12 +581,13 @@ export default function App() {
                     ) : null}
                   </div>
                   {draftLines.length > 0 ? (
-                    <div className="checks">
+                    <div className="checks checks--draftFlip" ref={draftFlipContainerRef}>
                       {draftLines.map((line, index) => (
                         <div
+                          data-draft-row-id={line.id}
                           className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}${
                             draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
-                          }`}
+                          }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}`}
                           key={line.id}
                           onDragOver={(e) => {
                             if (isSubmitting) return;
@@ -541,11 +613,15 @@ export default function App() {
                             title="Przeciągnij, aby zmienić kolejność"
                             aria-label={`Zmień kolejność: ${line.name}`}
                             onDragStart={(e) => {
+                              setDraftDraggingIndex(index);
                               e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
                               e.dataTransfer.setData("text/plain", String(index));
                               e.dataTransfer.effectAllowed = "move";
                             }}
-                            onDragEnd={() => setDraftDragOverIndex(null)}
+                            onDragEnd={() => {
+                              setDraftDragOverIndex(null);
+                              setDraftDraggingIndex(null);
+                            }}
                           >
                             <span className="dragHandleGrip" aria-hidden="true" />
                           </div>
