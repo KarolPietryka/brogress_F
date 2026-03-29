@@ -9,6 +9,21 @@ import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./model/
 
 const workoutClient = new WorkoutClient();
 
+/** BE: {@code status} DONE | PLANNED | NEXT; legacy {@code planned}. */
+function normalizeExerciseStatus(e) {
+  const s = e?.status;
+  if (s === "PLANNED" || s === "NEXT" || s === "DONE") return s;
+  if (e?.planned === true) return "PLANNED";
+  return "DONE";
+}
+
+function rowStatusModifier(status) {
+  const s = normalizeExerciseStatus({ status });
+  if (s === "PLANNED") return "planned";
+  if (s === "NEXT") return "next";
+  return "done";
+}
+
 function exerciseToRow(group, e) {
   return {
     orderId: e.orderId ?? 0,
@@ -16,7 +31,7 @@ function exerciseToRow(group, e) {
     name: e.name,
     weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
     reps: e.reps != null ? String(e.reps) : "",
-    planned: e.planned === true,
+    status: normalizeExerciseStatus(e),
   };
 }
 
@@ -27,7 +42,7 @@ function flattenBodyPartRows(blockList) {
   });
 }
 
-/** GET /workout: scala wykonane + plan (dzisiaj), sort po orderId; {@code planned} z API do stylowania. */
+/** GET /workout: executed + plan merged, sorted by orderId; each row carries {@code status} for styling. */
 function mapServerWorkout(w) {
   const executed = flattenBodyPartRows(w.bodyPart);
   const planned = flattenBodyPartRows(w.exercisePlan);
@@ -59,7 +74,7 @@ function mapPrefillToDraft(prefill) {
   const exerciseMeta = {};
   for (const { group, ex } of flat) {
     const id = newDraftLineId();
-    draftLines.push({ id, group, name: ex.name, planned: ex.planned === true });
+    draftLines.push({ id, group, name: ex.name, status: normalizeExerciseStatus(ex) });
     exerciseMeta[id] = {
       weight: prefillNumberToDigitsField(ex.weight),
       reps: prefillNumberToDigitsField(ex.reps),
@@ -221,7 +236,7 @@ export default function App() {
 
   function addExerciseFromPicker(groupName, exerciseName) {
     const id = newDraftLineId();
-    setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName, planned: false }]);
+    setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName, status: "PLANNED" }]);
     setExerciseMeta((prev) => ({
       ...prev,
       [id]: { weight: "", reps: "" },
@@ -278,6 +293,7 @@ export default function App() {
       row.name = line.name;
       row.weight = parseIntOrNull(exerciseMeta[line.id]?.weight || "");
       row.reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
+      row.status = line.status ?? "PLANNED";
       block.exercises = [row];
       return block;
     });
@@ -346,7 +362,7 @@ export default function App() {
                 <div className="workoutRows">
                   {item.rows.map((row, idx) => (
                     <div
-                      className={`workoutRow${row.planned ? " workoutRow--planned" : ""}`}
+                      className={`workoutRow workoutRow--${rowStatusModifier(row.status)}`}
                       key={`${item.id}-${idx}`}
                     >
                       <span className="workoutRowGroup">{row.group}</span>
@@ -449,7 +465,7 @@ export default function App() {
                     <div className="checks">
                       {draftLines.map((line) => (
                         <div
-                          className={`exerciseRow${line.planned ? " exerciseRow--planned" : ""}`}
+                          className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}`}
                           key={line.id}
                         >
                           <div className="exerciseNameCell">

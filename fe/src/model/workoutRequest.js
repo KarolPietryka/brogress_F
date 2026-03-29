@@ -1,10 +1,12 @@
-/** { "name", "weight", "reps" } */
+/** { "name", "weight", "reps", "status" } — status: PLANNED | NEXT | DONE */
 export class WorkoutExercise {
   name = "";
   /** @type {number | null} */
   weight = null;
   /** @type {number | null} */
   reps = null;
+  /** @type {string | undefined} */
+  status;
 }
 
 /** { "bodyPartName", "exercises" } */

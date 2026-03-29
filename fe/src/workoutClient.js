@@ -12,14 +12,14 @@ export class WorkoutClient {
    *     {
    *       "bodyPartName": "chest",
    *       "exercises": [
-   *         { "name": "Bench Press", "weight": 100, "reps": 10 },
-   *         { "name": "Push-ups", "weight": 0, "reps": 20 }
+   *         { "name": "Bench Press", "weight": 100, "reps": 10, "status": "DONE" },
+   *         { "name": "Push-ups", "weight": 0, "reps": 20, "status": "PLANNED" }
    *       ]
    *     },
    *     {
    *       "bodyPartName": "back",
    *       "exercises": [
-   *         { "name": "Pull-ups", "weight": 0, "reps": 12 }
+   *         { "name": "Pull-ups", "weight": 0, "reps": 12, "status": "NEXT" }
    *       ]
    *     }
    *   ]
@@ -46,7 +46,7 @@ export class WorkoutClient {
   }
 
   /**
-   * GET /workout/prefill — `bodyPart[].exercises[]` zawiera m.in. `planned` (plan na dziś vs klon ostatniej sesji).
+   * GET /workout/prefill — `bodyPart[].exercises[]` includes `status` (PLANNED | NEXT | DONE).
    */
   prefillWorkout() {
     return fetch(`${WORKOUT_API_BASE}/workout/prefill`, { method: "GET" });
