@@ -5,7 +5,7 @@ import {
   MUSCLE_GROUPS,
 } from "./workoutData.js";
 import { WorkoutClient, WORKOUT_API_BASE } from "./workoutClient.js";
-import { WorkoutBodyPart, WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
+import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 
 const workoutClient = new WorkoutClient();
 
@@ -25,27 +25,37 @@ function rowStatusModifier(status) {
 }
 
 function exerciseToRow(group, e) {
+  const repsStr = e.reps != null && e.reps !== "" ? String(e.reps) : "";
+  const hasReps = repsStr !== "";
+  const wRaw = e.weight;
+  const weightStr =
+    wRaw != null && wRaw !== ""
+      ? String(wRaw)
+      : hasReps
+        ? "0"
+        : "";
   return {
     orderId: e.orderId ?? 0,
     group,
     name: e.name,
-    weight: e.weight != null && e.weight !== "" ? String(e.weight) : "",
-    reps: e.reps != null ? String(e.reps) : "",
+    weight: weightStr,
+    reps: repsStr,
     status: normalizeExerciseStatus(e),
   };
 }
 
-function flattenBodyPartRows(blockList) {
-  return (blockList || []).flatMap((bp) => {
-    const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
-    return (bp.exercises || []).map((e) => exerciseToRow(group, e));
+/** GET /workout: each list item includes {@code bodyPartName} (same as entity). */
+function mapExerciseListToRows(list) {
+  return (list || []).map((e) => {
+    const group = BODY_PART_TO_GROUP_LABEL[e.bodyPartName] || e.bodyPartName;
+    return exerciseToRow(group, e);
   });
 }
 
 /** GET /workout: executed + plan merged, sorted by orderId; each row carries {@code status} for styling. */
 function mapServerWorkout(w) {
-  const executed = flattenBodyPartRows(w.bodyPart);
-  const planned = flattenBodyPartRows(w.exercisePlan);
+  const executed = mapExerciseListToRows(w.bodyPart);
+  const planned = mapExerciseListToRows(w.exercisePlan);
   const rows = [...executed, ...planned]
     .sort((a, b) => a.orderId - b.orderId)
     .map(({ orderId: _o, ...row }) => row);
@@ -58,25 +68,19 @@ function mapServerWorkout(w) {
 
 /** Maps GET /workout/prefill JSON to modal draft state (same shape as manual picks + meta). */
 function mapPrefillToDraft(prefill) {
-  const bodyParts = prefill?.bodyPart;
-  if (!Array.isArray(bodyParts) || bodyParts.length === 0) {
+  const exercises = prefill?.bodyPart;
+  if (!Array.isArray(exercises) || exercises.length === 0) {
     return { draftLines: [], exerciseMeta: {} };
   }
-  const flat = [];
-  for (const bp of bodyParts) {
-    const group = BODY_PART_TO_GROUP_LABEL[bp.bodyPartName] || bp.bodyPartName;
-    for (const ex of bp.exercises || []) {
-      flat.push({ group, ex });
-    }
-  }
-  flat.sort((a, b) => (a.ex.orderId ?? 0) - (b.ex.orderId ?? 0));
+  const sorted = [...exercises].sort((a, b) => (a.orderId ?? 0) - (b.orderId ?? 0));
   const draftLines = [];
   const exerciseMeta = {};
-  for (const { group, ex } of flat) {
+  for (const ex of sorted) {
+    const group = BODY_PART_TO_GROUP_LABEL[ex.bodyPartName] || ex.bodyPartName;
     const id = newDraftLineId();
     draftLines.push({ id, group, name: ex.name, status: normalizeExerciseStatus(ex) });
     exerciseMeta[id] = {
-      weight: prefillNumberToDigitsField(ex.weight),
+      weight: prefillWeightField(ex.weight),
       reps: prefillNumberToDigitsField(ex.reps),
     };
   }
@@ -87,6 +91,14 @@ function prefillNumberToDigitsField(value) {
   if (value == null || value === "") return "";
   const n = Number(value);
   if (!Number.isFinite(n)) return "";
+  return digits4(String(Math.round(n)));
+}
+
+/** Prefill weight: missing or invalid → "0" so bodyweight / no-BE-weight rows are editable. */
+function prefillWeightField(value) {
+  if (value == null || value === "") return "0";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0";
   return digits4(String(Math.round(n)));
 }
 
@@ -109,6 +121,13 @@ function digits4(value) {
 
 function parseIntOrNull(s) {
   if (!s) return null;
+  const n = Number.parseInt(String(s), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Empty weight field submits as 0 (bodyweight / default). */
+function parseWeightIntOrNull(s) {
+  if (s === "" || s == null) return 0;
   const n = Number.parseInt(String(s), 10);
   return Number.isFinite(n) ? n : null;
 }
@@ -239,7 +258,7 @@ export default function App() {
     setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName, status: "PLANNED" }]);
     setExerciseMeta((prev) => ({
       ...prev,
-      [id]: { weight: "", reps: "" },
+      [id]: { weight: "0", reps: "" },
     }));
   }
 
@@ -262,7 +281,7 @@ export default function App() {
     const value = digits4(raw);
     setExerciseMeta((prev) => ({
       ...prev,
-      [lineId]: { ...(prev[lineId] || { weight: "", reps: "" }), [field]: value },
+      [lineId]: { ...(prev[lineId] || { weight: "0", reps: "" }), [field]: value },
     }));
   }
 
@@ -274,9 +293,13 @@ export default function App() {
 
     for (const line of draftLines) {
       const reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
-      const weight = parseIntOrNull(exerciseMeta[line.id]?.weight || "");
-      if (reps == null || weight == null) {
-        setSubmitError("Fill in Weight and Reps for every exercise in your workout.");
+      const weight = parseWeightIntOrNull(exerciseMeta[line.id]?.weight);
+      if (reps == null) {
+        setSubmitError("Fill in Reps for every exercise in your workout.");
+        return;
+      }
+      if (weight === null) {
+        setSubmitError("Invalid weight for an exercise in your workout.");
         return;
       }
     }
@@ -285,17 +308,14 @@ export default function App() {
     setSubmitError("");
 
     const request = new WorkoutSubmitRequest();
-    /** One bodyPart block per draft line so global order matches the UI (same as prefill). */
-    request.bodyPart = draftLines.map((line) => {
-      const block = new WorkoutBodyPart();
-      block.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
+    request.exercises = draftLines.map((line) => {
       const row = new WorkoutExercise();
+      row.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
       row.name = line.name;
-      row.weight = parseIntOrNull(exerciseMeta[line.id]?.weight || "");
+      row.weight = parseWeightIntOrNull(exerciseMeta[line.id]?.weight);
       row.reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
       row.status = line.status ?? "PLANNED";
-      block.exercises = [row];
-      return block;
+      return row;
     });
 
     console.info("POST /workout payload", request);
@@ -368,7 +388,7 @@ export default function App() {
                       <span className="workoutRowGroup">{row.group}</span>
                       <span className="workoutRowName">{row.name}</span>
                       <span className="workoutRowStats" aria-label="Ciężar i powtórzenia">
-                        {row.weight && row.reps ? `${row.weight} × ${row.reps}` : "—"}
+                        {row.reps ? `${row.weight || "0"} × ${row.reps}` : "—"}
                       </span>
                     </div>
                   ))}

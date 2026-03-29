@@ -8,20 +8,10 @@ export class WorkoutClient {
    *
    * Example JSON body:
    * {
-   *   "bodyPart": [
-   *     {
-   *       "bodyPartName": "chest",
-   *       "exercises": [
-   *         { "name": "Bench Press", "weight": 100, "reps": 10, "status": "DONE" },
-   *         { "name": "Push-ups", "weight": 0, "reps": 20, "status": "PLANNED" }
-   *       ]
-   *     },
-   *     {
-   *       "bodyPartName": "back",
-   *       "exercises": [
-   *         { "name": "Pull-ups", "weight": 0, "reps": 12, "status": "NEXT" }
-   *       ]
-   *     }
+   *   "exercises": [
+   *     { "bodyPartName": "chest", "name": "Bench Press", "weight": 100, "reps": 10, "status": "DONE" },
+   *     { "bodyPartName": "chest", "name": "Push-ups", "weight": 0, "reps": 20, "status": "PLANNED" },
+   *     { "bodyPartName": "back", "name": "Pull-ups", "weight": 0, "reps": 12, "status": "NEXT" }
    *   ]
    * }
    *
@@ -46,7 +36,7 @@ export class WorkoutClient {
   }
 
   /**
-   * GET /workout/prefill — `bodyPart[].exercises[]` includes `status` (PLANNED | NEXT | DONE).
+   * GET /workout/prefill — flat `bodyPart[]` rows with `bodyPartName` on each; `status` PLANNED | NEXT | DONE.
    */
   prefillWorkout() {
     return fetch(`${WORKOUT_API_BASE}/workout/prefill`, { method: "GET" });

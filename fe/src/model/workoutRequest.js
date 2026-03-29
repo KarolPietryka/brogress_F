@@ -1,5 +1,6 @@
-/** { "name", "weight", "reps", "status" } — status: PLANNED | NEXT | DONE */
+/** One persisted line: same shape as GET rows and {@link WorkoutSet} (bodyPart on each exercise). */
 export class WorkoutExercise {
+  bodyPartName = "";
   name = "";
   /** @type {number | null} */
   weight = null;
@@ -9,15 +10,8 @@ export class WorkoutExercise {
   status;
 }
 
-/** { "bodyPartName", "exercises" } */
-export class WorkoutBodyPart {
-  bodyPartName = "";
+/** { "exercises": [ ... ] } — POST /workout */
+export class WorkoutSubmitRequest {
   /** @type {WorkoutExercise[]} */
   exercises = [];
-}
-
-/** { "bodyPart": [ ... ] } — POST /workout */
-export class WorkoutSubmitRequest {
-  /** @type {WorkoutBodyPart[]} */
-  bodyPart = [];
 }
