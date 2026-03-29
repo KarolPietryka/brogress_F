@@ -452,6 +452,51 @@ body {
   min-height: 46px;
 }
 
+.exerciseRow--dragOver {
+  border-color: rgba(255, 207, 90, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 207, 90, 0.2);
+}
+
+.dragHandle {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 40px;
+  margin: -4px 0 -4px -4px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: grab;
+  touch-action: none;
+  color: rgba(255, 255, 255, 0.45);
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.dragHandle:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.dragHandle[draggable="false"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dragHandleGrip {
+  display: block;
+  width: 8px;
+  height: 18px;
+  background-image: radial-gradient(circle, currentColor 1px, transparent 1.5px);
+  background-size: 4px 6px;
+  background-position: 0 1px;
+  opacity: 0.9;
+}
+
 /* Modal draft rows — status from API (prefill) or new picks */
 .exerciseRow--done {
   border-style: solid;

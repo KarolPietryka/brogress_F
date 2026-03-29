@@ -137,6 +137,26 @@ function newDraftLineId() {
   return `d-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const DRAFT_DND_TYPE = "application/x-brogress-draft-index";
+
+/** Reorder so the item at {@code fromIndex} ends up immediately before the row that was at {@code toIndex} (drop target). */
+function reorderDraftIndices(lines, fromIndex, toIndex) {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= lines.length ||
+    toIndex >= lines.length
+  ) {
+    return lines;
+  }
+  const next = [...lines];
+  const [item] = next.splice(fromIndex, 1);
+  const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex;
+  next.splice(insertAt, 0, item);
+  return next;
+}
+
 export default function App() {
   const openModalInFlight = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -151,6 +171,8 @@ export default function App() {
   const [templateLoadError, setTemplateLoadError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  /** Drop-target row index while reordering "Your workout" (drag handle only). */
+  const [draftDragOverIndex, setDraftDragOverIndex] = useState(null);
 
   const refreshWorkoutsFromServer = useCallback(async () => {
     const woRes = await workoutClient.getWorkouts();
@@ -251,6 +273,7 @@ export default function App() {
     setIsOpen(false);
     setIsSubmitting(false);
     setSubmitError("");
+    setDraftDragOverIndex(null);
   }
 
   function addExerciseFromPicker(groupName, exerciseName) {
@@ -275,6 +298,11 @@ export default function App() {
     setDraftLines([]);
     setExerciseMeta({});
     setSubmitError("");
+    setDraftDragOverIndex(null);
+  }
+
+  function moveDraftLine(fromIndex, toIndex) {
+    setDraftLines((prev) => reorderDraftIndices(prev, fromIndex, toIndex));
   }
 
   function setExerciseField(lineId, field, raw) {
@@ -483,11 +511,44 @@ export default function App() {
                   </div>
                   {draftLines.length > 0 ? (
                     <div className="checks">
-                      {draftLines.map((line) => (
+                      {draftLines.map((line, index) => (
                         <div
-                          className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}`}
+                          className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}${
+                            draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
+                          }`}
                           key={line.id}
+                          onDragOver={(e) => {
+                            if (isSubmitting) return;
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            setDraftDragOverIndex(index);
+                          }}
+                          onDrop={(e) => {
+                            if (isSubmitting) return;
+                            e.preventDefault();
+                            const raw =
+                              e.dataTransfer.getData(DRAFT_DND_TYPE) ||
+                              e.dataTransfer.getData("text/plain");
+                            const fromIndex = Number.parseInt(raw, 10);
+                            setDraftDragOverIndex(null);
+                            if (!Number.isFinite(fromIndex)) return;
+                            moveDraftLine(fromIndex, index);
+                          }}
                         >
+                          <div
+                            className="dragHandle"
+                            draggable={!isSubmitting}
+                            title="Przeciągnij, aby zmienić kolejność"
+                            aria-label={`Zmień kolejność: ${line.name}`}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
+                              e.dataTransfer.setData("text/plain", String(index));
+                              e.dataTransfer.effectAllowed = "move";
+                            }}
+                            onDragEnd={() => setDraftDragOverIndex(null)}
+                          >
+                            <span className="dragHandleGrip" aria-hidden="true" />
+                          </div>
                           <div className="exerciseNameCell">
                             <span className="muscleTag" title="Partia">
                               {line.group}
