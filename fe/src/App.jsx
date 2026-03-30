@@ -927,6 +927,19 @@ function LoginGate({ nick, onLoggedIn }) {
                 disabled={busy}
               />
             </label>
+            <p className="auth-poc-warning" role="note">
+              don&apos;t put nothing serious here because I will save password without hashing it. Im serious
+              it&apos;s only POC. add to{" "}
+              <a
+                href="https://brogress-f.onrender.com/u/kapiet"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="auth-poc-warning-link"
+              >
+                https://brogress-f.onrender.com/u/kapiet
+              </a>{" "}
+              if you want to see some data (password: kapiet)
+            </p>
             {error ? <div className="errorText">{error}</div> : null}
             <div className="auth-actions">
               <button

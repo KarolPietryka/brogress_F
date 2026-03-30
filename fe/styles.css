@@ -981,6 +981,20 @@ body {
   color: var(--muted);
 }
 
+.auth-poc-warning {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted2);
+  font-style: italic;
+}
+
+.auth-poc-warning-link {
+  color: var(--accent);
+  word-break: break-all;
+  font-style: normal;
+}
+
 .auth-input {
   padding: 12px 14px;
   border-radius: var(--radius2);

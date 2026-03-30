@@ -1,18 +1,18 @@
-export const MUSCLE_GROUPS = ["Klata", "Plecy", "Nogi", "Ramiona", "Barki"];
+export const MUSCLE_GROUPS = ["Chest", "Back", "Legs", "Arms", "Shoulders"];
 
 export const BODY_PART_API_NAME = {
-  Klata: "chest",
-  Plecy: "back",
-  Nogi: "legs",
-  Ramiona: "arms",
-  Barki: "shoulders",
+  Chest: "chest",
+  Back: "back",
+  Legs: "legs",
+  Arms: "arms",
+  Shoulders: "shoulders",
 };
 
-/** Odwrotność {@link BODY_PART_API_NAME} — odpowiedź GET /workout */
+/** Inverse of {@link BODY_PART_API_NAME} — GET /workout response mapping */
 export const BODY_PART_TO_GROUP_LABEL = {
-  chest: "Klata",
-  back: "Plecy",
-  legs: "Nogi",
-  arms: "Ramiona",
-  shoulders: "Barki",
+  chest: "Chest",
+  back: "Back",
+  legs: "Legs",
+  arms: "Arms",
+  shoulders: "Shoulders",
 };
