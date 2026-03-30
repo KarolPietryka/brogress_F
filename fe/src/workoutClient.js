@@ -1,49 +1,70 @@
-/** Ustaw na Renderze (Static Site): Environment → `VITE_WORKOUT_API_URL` = publiczny URL BE (bez końcowego `/`). */
+/** Set on Render (Static Site): Environment → `VITE_WORKOUT_API_URL` = public BE URL (no trailing `/`). */
 export const WORKOUT_API_BASE =
   import.meta.env.VITE_WORKOUT_API_URL ?? "http://localhost:8080";
 
 export class WorkoutClient {
   /**
-   * Sends a POST request to submit workout data.
-   *
-   * Example JSON body:
-   * {
-   *   "exercises": [
-   *     { "bodyPartName": "chest", "name": "Bench Press", "weight": 100, "reps": 10, "status": "DONE" },
-   *     { "bodyPartName": "chest", "name": "Push-ups", "weight": 0, "reps": 20, "status": "PLANNED" },
-   *     { "bodyPartName": "back", "name": "Pull-ups", "weight": 0, "reps": 12, "status": "NEXT" }
-   *   ]
-   * }
-   *
-   * @param {object} body - The object to be converted to JSON (e.g., WorkoutSubmitRequest).
-   * @returns {Promise<Response>} - A promise resolving to the response from the server.
+   * @param {{ getToken?: () => string | null, onUnauthorized?: () => void }} [options]
    */
+  constructor(options = {}) {
+    this.getToken = options.getToken ?? (() => null);
+    this.onUnauthorized = options.onUnauthorized;
+  }
+
+  #withAuth(res) {
+    if (res.status === 401) {
+      this.onUnauthorized?.();
+    }
+    return res;
+  }
+
+  #headers(jsonBody) {
+    const h = {};
+    if (jsonBody) {
+      h["Content-Type"] = "application/json";
+    }
+    const t = this.getToken();
+    if (t) {
+      h.Authorization = `Bearer ${t}`;
+    }
+    return h;
+  }
+
   postWorkouts(body) {
     const url = `${WORKOUT_API_BASE}/workout`;
     return fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: this.#headers(true),
       body: JSON.stringify(body),
-    });
+    }).then((r) => this.#withAuth(r));
   }
 
   getExerciseCatalog() {
-    return fetch(`${WORKOUT_API_BASE}/workout/exercise-catalog`);
+    return fetch(`${WORKOUT_API_BASE}/workout/exercise-catalog`, {
+      headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
   }
 
   getWorkouts() {
-    return fetch(`${WORKOUT_API_BASE}/workout`);
+    return fetch(`${WORKOUT_API_BASE}/workout`, {
+      headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
   }
 
   /** GET /brogres/graph — [{ workoutDay, volume }, …] for current specialization slice. */
   getGraphVolume() {
-    return fetch(`${WORKOUT_API_BASE}/brogres/graph`);
+    return fetch(`${WORKOUT_API_BASE}/brogres/graph`, {
+      headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
   }
 
   /**
    * GET /workout/prefill — flat `bodyPart[]` rows with `bodyPartName` on each; `status` PLANNED | NEXT | DONE.
    */
   prefillWorkout() {
-    return fetch(`${WORKOUT_API_BASE}/workout/prefill`, { method: "GET" });
+    return fetch(`${WORKOUT_API_BASE}/workout/prefill`, {
+      method: "GET",
+      headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
   }
 }

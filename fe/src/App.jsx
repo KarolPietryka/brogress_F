@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link, Route, Routes, useParams } from "react-router-dom";
+import { authRequest } from "./authClient.js";
 import {
   BODY_PART_API_NAME,
   BODY_PART_TO_GROUP_LABEL,
@@ -7,8 +9,6 @@ import {
 import { WorkoutClient, WORKOUT_API_BASE } from "./workoutClient.js";
 import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 import { VolumeChart } from "./VolumeChart.jsx";
-
-const workoutClient = new WorkoutClient();
 
 /** BE: {@code status} DONE | PLANNED | NEXT; legacy {@code planned}. */
 function normalizeExerciseStatus(e) {
@@ -161,7 +161,16 @@ function reorderDraftIndices(lines, fromIndex, toIndex) {
   return next;
 }
 
-export default function App() {
+function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) {
+  const workoutClient = useMemo(
+    () =>
+      new WorkoutClient({
+        getToken: () => authToken,
+        onUnauthorized: () => onAuthLost?.(),
+      }),
+    [authToken, onAuthLost]
+  );
+
   const openModalInFlight = useRef(false);
   const [isOpen, setIsOpen] = useState(false);
   /** Which muscle group's exercise list is shown in the picker (single). */
@@ -196,7 +205,7 @@ export default function App() {
     const list = await woRes.json();
     setTemplateItems(Array.isArray(list) ? list.map(mapServerWorkout) : []);
     setTemplateLoadError("");
-  }, []);
+  }, [workoutClient]);
 
   const loadExerciseCatalog = useCallback(async () => {
     const catRes = await workoutClient.getExerciseCatalog();
@@ -207,7 +216,7 @@ export default function App() {
     const cat = await catRes.json();
     setExercisesByGroup(cat && typeof cat === "object" ? cat : {});
     setCatalogError("");
-  }, []);
+  }, [workoutClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -497,10 +506,23 @@ export default function App() {
           <div className="mark" aria-hidden="true" />
           <div>
             <div className="title">Brogress</div>
-            <div className="subtitle">Workout template builder</div>
+            <div className="subtitle">
+              Workout template builder
+              {urlNick ? (
+                <>
+                  {" "}
+                  · <span className="header-nick">{urlNick}</span>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
         <div className="header-actions">
+          {typeof onLogout === "function" ? (
+            <button className="btn" type="button" onClick={onLogout}>
+              Wyloguj
+            </button>
+          ) : null}
           <button
             className={`btn${graphShellOpen ? " btn-toggle-on" : ""}`}
             type="button"
@@ -812,5 +834,192 @@ export default function App() {
         </>
       ) : null}
     </main>
+  );
+}
+
+const STORAGE_TOKEN = "brogress_token";
+const STORAGE_NICK = "brogress_nick";
+
+function EntryHome() {
+  return (
+    <main className="app app--entry">
+      <section className="content content--entry">
+        <div className="panel">
+          <div className="panel-head">
+            <h1 className="panel-title">Brogress</h1>
+            <p className="panel-hint">
+              Otwórz adres z Twoim nickiem w ścieżce, np.{" "}
+              <Link to="/u/demo" className="pill">
+                /u/demo
+              </Link>{" "}
+              (domyślne hasło: <code>demo</code>).
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function LoginGate({ nick, onLoggedIn }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState("login");
+
+  async function submitLogin() {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await authRequest("login", { nick, password });
+      if (!result.ok) {
+        setError(
+          result.status === 401
+            ? "Złe hasło lub nie ma takiego konta."
+            : result.errorText || `HTTP ${result.status}`
+        );
+        return;
+      }
+      onLoggedIn(result.data.token, result.data.nick);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitRegister() {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await authRequest("register", { nick, password });
+      if (!result.ok) {
+        setError(
+          result.status === 409
+            ? "Ten nick jest już zajęty."
+            : result.errorText || `HTTP ${result.status}`
+        );
+        return;
+      }
+      onLoggedIn(result.data.token, result.data.nick);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="app app--entry">
+      <section className="content content--entry">
+        <div className="panel auth-panel">
+          <div className="panel-head">
+            <h1 className="panel-title">Brogress</h1>
+            <p className="panel-hint">
+              Nick z adresu: <strong>{nick || "—"}</strong>
+            </p>
+          </div>
+          <div className="auth-form">
+            <label className="auth-label">
+              Hasło
+              <input
+                className="auth-input"
+                type="password"
+                autoComplete={mode === "register" ? "new-password" : "current-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={busy}
+              />
+            </label>
+            {error ? <div className="errorText">{error}</div> : null}
+            <div className="auth-actions">
+              <button
+                className="btn primary"
+                type="button"
+                disabled={busy || !password}
+                onClick={mode === "register" ? submitRegister : submitLogin}
+              >
+                {busy ? "…" : mode === "register" ? "Utwórz konto" : "Zaloguj"}
+              </button>
+            </div>
+            <button
+              className="btn btn-linkish"
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setMode((m) => (m === "login" ? "register" : "login"));
+                setError("");
+              }}
+            >
+              {mode === "login" ? "Pierwszy raz? Utwórz konto" : "Mam konto — zaloguj"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function UserAppShell() {
+  const { nick: nickParam } = useParams();
+  const decodedNick = decodeURIComponent(nickParam || "").trim();
+  const [token, setToken] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const t = sessionStorage.getItem(STORAGE_TOKEN);
+    const n = sessionStorage.getItem(STORAGE_NICK);
+    if (t && n && n.toLowerCase() === decodedNick.toLowerCase()) {
+      setToken(t);
+    } else {
+      sessionStorage.removeItem(STORAGE_TOKEN);
+      sessionStorage.removeItem(STORAGE_NICK);
+      setToken(null);
+    }
+    setReady(true);
+  }, [decodedNick]);
+
+  const saveAuth = useCallback((t, canonicalNick) => {
+    sessionStorage.setItem(STORAGE_TOKEN, t);
+    sessionStorage.setItem(STORAGE_NICK, canonicalNick);
+    setToken(t);
+  }, []);
+
+  const clearAuth = useCallback(() => {
+    sessionStorage.removeItem(STORAGE_TOKEN);
+    sessionStorage.removeItem(STORAGE_NICK);
+    setToken(null);
+  }, []);
+
+  if (!ready) {
+    return null;
+  }
+  if (!decodedNick) {
+    return (
+      <main className="app app--entry">
+        <section className="content content--entry">
+          <div className="panel">
+            <p className="panel-hint">Brak nicka w adresie. Wróć na <Link to="/">stronę główną</Link>.</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+  if (!token) {
+    return <LoginGate nick={decodedNick} onLoggedIn={saveAuth} />;
+  }
+  const storedNick = sessionStorage.getItem(STORAGE_NICK) || decodedNick;
+  return (
+    <BrogressWorkspace
+      authToken={token}
+      urlNick={storedNick}
+      onAuthLost={clearAuth}
+      onLogout={clearAuth}
+    />
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<EntryHome />} />
+      <Route path="/u/:nick" element={<UserAppShell />} />
+    </Routes>
   );
 }
