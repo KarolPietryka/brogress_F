@@ -68,6 +68,23 @@ body {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.btn-toggle-on {
+  border-color: rgba(255, 207, 90, 0.5);
+  background: rgba(255, 207, 90, 0.12);
+}
+
+.btn-toggle-on:hover {
+  border-color: rgba(255, 207, 90, 0.65);
+  background: rgba(255, 207, 90, 0.16);
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -182,6 +199,129 @@ body {
   margin: 6px 0 0;
   font-size: 13px;
   color: var(--muted2);
+}
+
+.graph-shell-status {
+  margin: 0 16px 12px;
+}
+
+.graph-shell-loading {
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted2);
+}
+
+.graph-shell-empty {
+  margin: 0 16px 18px;
+}
+
+.volume-chart {
+  width: 100%;
+  min-height: 280px;
+}
+
+.graph-volume-body {
+  padding-bottom: 8px;
+}
+
+.volume-chart-region {
+  padding: 8px 12px 0;
+}
+
+.graph-volume-table-wrap {
+  padding: 8px 16px 20px;
+}
+
+.graph-volume-table-wrap--below {
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 4px;
+}
+
+.graph-volume-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.graph-volume-table th,
+.graph-volume-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.graph-volume-table th {
+  color: var(--muted2);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.graph-volume-col-num,
+.graph-volume-num {
+  text-align: right;
+}
+
+.graph-volume-num {
+  font-family: var(--mono);
+}
+
+.graph-shell-panel .graph-shell {
+  padding: 20px 16px 24px;
+}
+
+.graph-shell-chart {
+  position: relative;
+  min-height: 220px;
+  border-radius: var(--radius2);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 24px 20px 28px 36px;
+}
+
+.graph-shell-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  height: 160px;
+  padding-bottom: 4px;
+}
+
+.graph-shell-bar {
+  flex: 1;
+  max-width: 48px;
+  margin: 0 auto;
+  border-radius: 6px 6px 2px 2px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 207, 90, 0.18) 0%,
+    rgba(255, 255, 255, 0.06) 100%
+  );
+  opacity: 0.85;
+}
+
+.graph-shell-axis {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.1);
+  pointer-events: none;
+}
+
+.graph-shell-axis--x {
+  left: 36px;
+  right: 20px;
+  bottom: 18px;
+  height: 1px;
+}
+
+.graph-shell-axis--y {
+  left: 28px;
+  top: 24px;
+  bottom: 28px;
+  width: 1px;
 }
 
 .template {

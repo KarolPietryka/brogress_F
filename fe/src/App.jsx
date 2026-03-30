@@ -6,6 +6,7 @@ import {
 } from "./workoutData.js";
 import { WorkoutClient, WORKOUT_API_BASE } from "./workoutClient.js";
 import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
+import { VolumeChart } from "./VolumeChart.jsx";
 
 const workoutClient = new WorkoutClient();
 
@@ -180,6 +181,11 @@ export default function App() {
   const [draftDraggingIndex, setDraftDraggingIndex] = useState(null);
   const draftFlipContainerRef = useRef(null);
   const prevDraftLayoutRef = useRef(new Map());
+  /** GRAPH SHELL: toggles main content between workout history and graph placeholder. */
+  const [graphShellOpen, setGraphShellOpen] = useState(false);
+  const [graphVolumePoints, setGraphVolumePoints] = useState([]);
+  const [graphVolumeError, setGraphVolumeError] = useState("");
+  const [graphVolumeLoading, setGraphVolumeLoading] = useState(false);
 
   const refreshWorkoutsFromServer = useCallback(async () => {
     const woRes = await workoutClient.getWorkouts();
@@ -230,10 +236,51 @@ export default function App() {
     };
   }, [loadExerciseCatalog, refreshWorkoutsFromServer]);
 
+  useEffect(() => {
+    if (!graphShellOpen) return undefined;
+    let cancelled = false;
+    setGraphVolumeLoading(true);
+    setGraphVolumeError("");
+    (async () => {
+      try {
+        const res = await workoutClient.getGraphVolume();
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          throw new Error(text || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setGraphVolumePoints(Array.isArray(data) ? data : []);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setGraphVolumeError(
+            `Nie udało się pobrać wykresu (${e instanceof Error ? e.message : "unknown error"}).`
+          );
+          setGraphVolumePoints([]);
+        }
+      } finally {
+        if (!cancelled) setGraphVolumeLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [graphShellOpen]);
+
   const pickerExercises = useMemo(() => {
     if (!activeGroup) return [];
     return exercisesByGroup[activeGroup] || [];
   }, [activeGroup, exercisesByGroup]);
+
+  const graphChartData = useMemo(
+    () =>
+      graphVolumePoints.map((p) => ({
+        day: p.workoutDay,
+        volume: Number(p.volume),
+      })),
+    [graphVolumePoints]
+  );
 
   const canSend = useMemo(() => draftLines.length > 0, [draftLines]);
 
@@ -453,49 +500,126 @@ export default function App() {
             <div className="subtitle">Workout template builder</div>
           </div>
         </div>
-        <button className="btn primary" type="button" onClick={openModal}>
-          Add workout
-        </button>
+        <div className="header-actions">
+          <button
+            className={`btn${graphShellOpen ? " btn-toggle-on" : ""}`}
+            type="button"
+            aria-pressed={graphShellOpen}
+            aria-label={graphShellOpen ? "Wróć do listy treningów" : "Pokaż wykres wolumenu"}
+            onClick={() => setGraphShellOpen((v) => !v)}
+          >
+            Your Brogress
+          </button>
+          <button className="btn primary" type="button" onClick={openModal}>
+            Add workout
+          </button>
+        </div>
       </header>
 
       <section className="content">
-        <div className="panel">
-          <div className="panel-head">
-            <h2 className="panel-title">Template</h2>
-            <p className="panel-hint">
-              Add a workout: pick a muscle group, tap exercises, then set weight and reps below.
-            </p>
-          </div>
-          <div className="template" aria-live="polite">
-            {templateLoadError ? <div className="errorText">{templateLoadError}</div> : null}
-            {templateItems.length === 0 && !templateLoadError ? (
-              <div className="empty">
-                Nothing here yet. Click <span className="pill">Add workout</span>.
-              </div>
-            ) : null}
-            {templateItems.map((item) => (
-              <div className="card" key={item.id}>
-                <div className="card-top">
-                  <div className="card-title">{formatWorkoutDate(item.workoutDate)}</div>
+        {graphShellOpen ? (
+          <div className="panel graph-shell-panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Wolumen</h2>
+              <p className="panel-hint">
+                Bieżąca seria — wolumen wg dnia treningu (<span className="pill">GET /brogres/graph</span>).
+              </p>
+            </div>
+            {graphVolumeError ? <div className="errorText graph-shell-status">{graphVolumeError}</div> : null}
+            {graphVolumeLoading ? (
+              <div className="graph-shell" aria-busy="true" aria-label="Ładowanie danych wykresu">
+                <div className="graph-shell-chart">
+                  <div className="graph-shell-bars">
+                    <div className="graph-shell-bar" style={{ height: "42%" }} />
+                    <div className="graph-shell-bar" style={{ height: "68%" }} />
+                    <div className="graph-shell-bar" style={{ height: "55%" }} />
+                    <div className="graph-shell-bar" style={{ height: "88%" }} />
+                    <div className="graph-shell-bar" style={{ height: "36%" }} />
+                    <div className="graph-shell-bar" style={{ height: "72%" }} />
+                  </div>
+                  <div className="graph-shell-axis graph-shell-axis--x" />
+                  <div className="graph-shell-axis graph-shell-axis--y" />
                 </div>
-                <div className="workoutRows">
-                  {item.rows.map((row, idx) => (
+                <p className="graph-shell-loading">Ładowanie…</p>
+              </div>
+            ) : (
+              <div className="graph-volume-body" aria-live="polite">
+                {graphVolumePoints.length === 0 && !graphVolumeError ? (
+                  <div className="empty graph-shell-empty">Brak punktów w bieżącej serii.</div>
+                ) : null}
+                {graphVolumePoints.length > 0 ? (
+                  <>
                     <div
-                      className={`workoutRow workoutRow--${rowStatusModifier(row.status)}`}
-                      key={`${item.id}-${idx}`}
+                      className="volume-chart-region"
+                      role="img"
+                      aria-label="Wykres liniowy wolumenu w kolejnych dniach treningu"
                     >
-                      <span className="workoutRowGroup">{row.group}</span>
-                      <span className="workoutRowName">{row.name}</span>
-                      <span className="workoutRowStats" aria-label="Ciężar i powtórzenia">
-                        {row.reps ? `${row.weight || "0"} × ${row.reps}` : "—"}
-                      </span>
+                      <VolumeChart data={graphChartData} formatDayLabel={formatWorkoutDate} />
                     </div>
-                  ))}
-                </div>
+                    <div className="graph-volume-table-wrap graph-volume-table-wrap--below">
+                      <table className="graph-volume-table">
+                        <thead>
+                          <tr>
+                            <th scope="col">Dzień</th>
+                            <th scope="col" className="graph-volume-col-num">
+                              Wolumen
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {graphVolumePoints.map((row) => (
+                            <tr key={row.workoutDay}>
+                              <td>{formatWorkoutDate(row.workoutDay)}</td>
+                              <td className="graph-volume-num">{Number(row.volume)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : null}
               </div>
-            ))}
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Template</h2>
+              <p className="panel-hint">
+                Add a workout: pick a muscle group, tap exercises, then set weight and reps below.
+              </p>
+            </div>
+            <div className="template" aria-live="polite">
+              {templateLoadError ? <div className="errorText">{templateLoadError}</div> : null}
+              {templateItems.length === 0 && !templateLoadError ? (
+                <div className="empty">
+                  Nothing here yet. Click <span className="pill">Add workout</span>.
+                </div>
+              ) : null}
+              {templateItems.map((item) => (
+                <div className="card" key={item.id}>
+                  <div className="card-top">
+                    <div className="card-title">{formatWorkoutDate(item.workoutDate)}</div>
+                  </div>
+                  <div className="workoutRows">
+                    {item.rows.map((row, idx) => (
+                      <div
+                        className={`workoutRow workoutRow--${rowStatusModifier(row.status)}`}
+                        key={`${item.id}-${idx}`}
+                      >
+                        <span className="workoutRowGroup">{row.group}</span>
+                        <span className="workoutRowName">{row.name}</span>
+                        <span className="workoutRowStats" aria-label="Ciężar i powtórzenia">
+                          {row.reps ? `${row.weight || "0"} × ${row.reps}` : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {isOpen ? (

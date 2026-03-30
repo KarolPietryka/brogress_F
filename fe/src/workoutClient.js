@@ -35,6 +35,11 @@ export class WorkoutClient {
     return fetch(`${WORKOUT_API_BASE}/workout`);
   }
 
+  /** GET /brogres/graph — [{ workoutDay, volume }, …] for current specialization slice. */
+  getGraphVolume() {
+    return fetch(`${WORKOUT_API_BASE}/brogres/graph`);
+  }
+
   /**
    * GET /workout/prefill — flat `bodyPart[]` rows with `bodyPartName` on each; `status` PLANNED | NEXT | DONE.
    */
