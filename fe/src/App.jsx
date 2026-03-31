@@ -196,6 +196,8 @@ function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) {
   const [graphVolumeError, setGraphVolumeError] = useState("");
   const [graphVolumeLoading, setGraphVolumeLoading] = useState(false);
 
+  const [volumeTableSortDir, setVolumeTableSortDir] = useState(null);
+
   const refreshWorkoutsFromServer = useCallback(async () => {
     const woRes = await workoutClient.getWorkouts();
     if (!woRes.ok) {
@@ -290,6 +292,24 @@ function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) {
       })),
     [graphVolumePoints]
   );
+
+  const sortedVolumePoints = useMemo(() => {
+    if (!volumeTableSortDir) return graphVolumePoints;
+    return [...graphVolumePoints].sort((a, b) => {
+      const da = a.workoutDay || "";
+      const db = b.workoutDay || "";
+      const cmp = da < db ? -1 : da > db ? 1 : 0;
+      return volumeTableSortDir === "asc" ? cmp : -cmp;
+    });
+  }, [graphVolumePoints, volumeTableSortDir]);
+
+  function toggleVolumeTableSort() {
+    setVolumeTableSortDir((prev) => {
+      if (prev === null) return "asc";
+      if (prev === "asc") return "desc";
+      return null;
+    });
+  }
 
   const canSend = useMemo(() => draftLines.length > 0, [draftLines]);
 
@@ -581,20 +601,48 @@ function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) {
                     <div className="graph-volume-table-wrap graph-volume-table-wrap--below">
                       <table className="graph-volume-table">
                         <thead>
-                          <tr>
-                            <th scope="col">Dzień</th>
-                            <th scope="col" className="graph-volume-col-num">
-                              Wolumen
-                            </th>
-                          </tr>
+                        <tr>
+                          <th
+                              scope="col"
+                              role="button"
+                              tabIndex={0}
+                              aria-sort={
+                                volumeTableSortDir === "asc"
+                                    ? "ascending"
+                                    : volumeTableSortDir === "desc"
+                                        ? "descending"
+                                        : "none"
+                              }
+                              onClick={toggleVolumeTableSort}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  toggleVolumeTableSort();
+                                }
+                              }}
+                              style={{ cursor: "pointer", userSelect: "none" }}
+                          >
+                            Dzień{" "}
+                            <span aria-hidden="true">
+                                    {volumeTableSortDir === "asc"
+                                        ? "▲"
+                                        : volumeTableSortDir === "desc"
+                                            ? "▼"
+                                            : "⇅"}
+                                  </span>
+                          </th>
+                          <th scope="col" className="graph-volume-col-num">
+                            Wolumen
+                          </th>
+                        </tr>
                         </thead>
                         <tbody>
-                          {graphVolumePoints.map((row) => (
+                        {sortedVolumePoints.map((row) => (
                             <tr key={row.workoutDay}>
                               <td>{formatWorkoutDate(row.workoutDay)}</td>
                               <td className="graph-volume-num">{Number(row.volume)}</td>
                             </tr>
-                          ))}
+                        ))}
                         </tbody>
                       </table>
                     </div>
