@@ -12,7 +12,7 @@ import { GraphPanel } from "./GraphPanel.jsx";
 import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
 
-export function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) {
+export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   const workoutClient = useMemo(
     () =>
       new WorkoutClient({
@@ -106,7 +106,7 @@ export function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) 
       } catch (e) {
         if (!cancelled) {
           setGraphVolumeError(
-            `Nie udało się pobrać wykresu (${e instanceof Error ? e.message : "unknown error"}).`
+            `Could not load chart data (${e instanceof Error ? e.message : "unknown error"}).`
           );
           setGraphVolumePoints([]);
         }
@@ -221,34 +221,25 @@ export function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) 
           <div className="mark" aria-hidden="true" />
           <div>
             <div className="title">Brogress</div>
-            <div className="subtitle">
-              Workout template builder
-              {urlNick ? (
-                <>
-                  {" "}
-                  · <span className="header-nick">{urlNick}</span>
-                </>
-              ) : null}
-            </div>
           </div>
         </div>
         <div className="header-actions">
           {typeof onLogout === "function" ? (
             <button className="btn" type="button" onClick={onLogout}>
-              Wyloguj
+              Log out
             </button>
           ) : null}
           <button
             className={`btn${graphShellOpen ? " btn-toggle-on" : ""}`}
             type="button"
             aria-pressed={graphShellOpen}
-            aria-label={graphShellOpen ? "Wróć do listy treningów" : "Pokaż wykres wolumenu"}
+            aria-label={graphShellOpen ? "Back to workout list" : "Show current series chart"}
             onClick={() => setGraphShellOpen((v) => !v)}
           >
             Your Brogress
           </button>
           <button className="btn primary" type="button" onClick={openModal}>
-            Add workout
+            Add exercise
           </button>
         </div>
       </header>

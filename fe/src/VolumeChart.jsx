@@ -53,12 +53,12 @@ export function VolumeChart({ data, formatDayLabel }) {
               fontSize: 13,
             }}
             labelFormatter={(iso) => formatDayLabel(iso)}
-            formatter={(value) => [String(value), "Wolumen"]}
+            formatter={(value) => [String(value), "Volume"]}
           />
           <Line
             type="monotone"
             dataKey="volume"
-            name="Wolumen"
+            name="Volume"
             stroke={LINE_STROKE}
             strokeWidth={2}
             dot={{ fill: LINE_STROKE, strokeWidth: 0, r: 4 }}

@@ -4,17 +4,11 @@ import { formatWorkoutDate, rowStatusModifier } from "./workoutHelpers.js";
 export function WorkoutListPanel({ items, loadError }) {
   return (
     <div className="panel">
-      <div className="panel-head">
-        <h2 className="panel-title">Template</h2>
-        <p className="panel-hint">
-          Add a workout: pick a muscle group, tap exercises, then set weight and reps below.
-        </p>
-      </div>
       <div className="template" aria-live="polite">
         {loadError ? <div className="errorText">{loadError}</div> : null}
         {items.length === 0 && !loadError ? (
           <div className="empty">
-            Nothing here yet. Click <span className="pill">Add workout</span>.
+            Nothing here yet. Click <span className="pill">Add exercise</span>.
           </div>
         ) : null}
         {items.map((item) => (

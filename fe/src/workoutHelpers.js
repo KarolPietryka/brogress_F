@@ -98,7 +98,7 @@ function prefillWeightField(value) {
 export function formatWorkoutDate(isoDate) {
   if (!isoDate) return "";
   try {
-    return new Intl.DateTimeFormat("pl-PL", { dateStyle: "medium" }).format(
+    return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(
       new Date(`${isoDate}T12:00:00`)
     );
   } catch {

@@ -54,11 +54,9 @@ export function UserAppShell() {
   if (!token) {
     return <LoginGate nick={decodedNick} onLoggedIn={saveAuth} />;
   }
-  const storedNick = sessionStorage.getItem(STORAGE_NICK) || decodedNick;
   return (
     <BrogressWorkspace
       authToken={token}
-      urlNick={storedNick}
       onAuthLost={clearAuth}
       onLogout={clearAuth}
     />

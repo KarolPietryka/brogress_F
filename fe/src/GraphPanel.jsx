@@ -35,14 +35,11 @@ export function GraphPanel({ volumePoints, volumeError, volumeLoading }) {
   return (
     <div className="panel graph-shell-panel">
       <div className="panel-head">
-        <h2 className="panel-title">Wolumen</h2>
-        <p className="panel-hint">
-          Bieżąca seria — wolumen wg dnia treningu (<span className="pill">GET /brogres/graph</span>).
-        </p>
+        <h2 className="panel-title">Current series</h2>
       </div>
       {volumeError ? <div className="errorText graph-shell-status">{volumeError}</div> : null}
       {volumeLoading ? (
-        <div className="graph-shell" aria-busy="true" aria-label="Ładowanie danych wykresu">
+        <div className="graph-shell" aria-busy="true" aria-label="Loading chart data">
           <div className="graph-shell-chart">
             <div className="graph-shell-bars">
               <div className="graph-shell-bar" style={{ height: "42%" }} />
@@ -55,19 +52,19 @@ export function GraphPanel({ volumePoints, volumeError, volumeLoading }) {
             <div className="graph-shell-axis graph-shell-axis--x" />
             <div className="graph-shell-axis graph-shell-axis--y" />
           </div>
-          <p className="graph-shell-loading">Ładowanie…</p>
+          <p className="graph-shell-loading">Loading…</p>
         </div>
       ) : (
         <div className="graph-volume-body" aria-live="polite">
           {volumePoints.length === 0 && !volumeError ? (
-            <div className="empty graph-shell-empty">Brak punktów w bieżącej serii.</div>
+            <div className="empty graph-shell-empty">No data points in the current series.</div>
           ) : null}
           {volumePoints.length > 0 ? (
             <>
               <div
                 className="volume-chart-region"
                 role="img"
-                aria-label="Wykres liniowy wolumenu w kolejnych dniach treningu"
+                aria-label="Line chart of training volume by workout day"
               >
                 <VolumeChart data={chartData} formatDayLabel={formatWorkoutDate} />
               </div>
@@ -95,7 +92,7 @@ export function GraphPanel({ volumePoints, volumeError, volumeLoading }) {
                         }}
                         style={{ cursor: "pointer", userSelect: "none" }}
                     >
-                      Dzień{" "}
+                      Day{" "}
                       <span aria-hidden="true">
                               {sortDir === "asc"
                                   ? "▲"
@@ -105,7 +102,7 @@ export function GraphPanel({ volumePoints, volumeError, volumeLoading }) {
                             </span>
                     </th>
                     <th scope="col" className="graph-volume-col-num">
-                      Wolumen
+                      Volume
                     </th>
                   </tr>
                   </thead>

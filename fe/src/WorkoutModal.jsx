@@ -165,7 +165,6 @@ export function WorkoutModal({
             {catalogError ? <div className="errorText">{catalogError}</div> : null}
             <div className="grid">
               {MUSCLE_GROUPS.map((g) => {
-                const count = (exercisesByGroup[g] || []).length;
                 const isSelected = activeGroup === g;
                 return (
                   <button
@@ -175,7 +174,6 @@ export function WorkoutModal({
                     onClick={() => setActiveGroup(g)}
                   >
                     <div className="choice-title">{g}</div>
-                    <div className="choice-sub">{count > 0 ? `${count} exercises` : ""}</div>
                   </button>
                 );
               })}
