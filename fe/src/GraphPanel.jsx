@@ -3,7 +3,7 @@ import { VolumeChart } from "./VolumeChart.jsx";
 import { formatWorkoutDate } from "./workoutHelpers.js";
 
 export function GraphPanel({ volumePoints, volumeError, volumeLoading }) {
-  const [sortDir, setSortDir] = useState(null);
+  const [sortDir, setSortDir] = useState("desc");
 
   const chartData = useMemo(
     () =>
