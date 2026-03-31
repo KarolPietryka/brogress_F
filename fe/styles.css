@@ -859,16 +859,16 @@ body {
 .workoutRows {
   margin-top: 10px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .workoutRow {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  padding: 8px 10px;
+  gap: 5px;
+  padding: 9px 10px;
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.03);
@@ -876,9 +876,9 @@ body {
 }
 
 .workoutRowGroup {
-  font-size: 10px;
+  font-size: 11px;
   font-family: var(--mono);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: rgba(255, 207, 90, 0.85);
   overflow: hidden;
@@ -887,19 +887,19 @@ body {
 }
 
 .workoutRowName {
-  font-size: 13px;
-  line-height: 1.25;
+  font-size: 14px;
+  line-height: 1.3;
   word-break: break-word;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 .workoutRowStats {
   font-family: var(--mono);
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
   margin-top: auto;
 }
 
@@ -936,7 +936,7 @@ body {
 
 @media (max-width: 900px) {
   .workoutRows {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -956,7 +956,7 @@ body {
   }
 
   .workoutRows {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .pickerList {
