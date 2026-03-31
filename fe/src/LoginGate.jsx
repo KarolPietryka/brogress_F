@@ -15,7 +15,7 @@ export function LoginGate({ nick, onLoggedIn }) {
       if (!result.ok) {
         setError(
           result.status === 401
-            ? "Złe hasło lub nie ma takiego konta."
+            ? "Wrong password or account does not exist."
             : result.errorText || `HTTP ${result.status}`
         );
         return;
@@ -34,7 +34,7 @@ export function LoginGate({ nick, onLoggedIn }) {
       if (!result.ok) {
         setError(
           result.status === 409
-            ? "Ten nick jest już zajęty."
+            ? "This nick is already taken."
             : result.errorText || `HTTP ${result.status}`
         );
         return;
@@ -52,12 +52,15 @@ export function LoginGate({ nick, onLoggedIn }) {
           <div className="panel-head">
             <h1 className="panel-title">Brogress</h1>
             <p className="panel-hint">
-              Nick z adresu: <strong>{nick || "—"}</strong>
+              Add <code>/u/your-login</code> to the URL to log in to your account.
+            </p>
+            <p className="panel-hint">
+              Nick from URL: <strong>{nick || "—"}</strong>
             </p>
           </div>
           <div className="auth-form">
             <label className="auth-label">
-              Hasło
+              Password
               <input
                 className="auth-input"
                 type="password"
@@ -69,7 +72,7 @@ export function LoginGate({ nick, onLoggedIn }) {
             </label>
             <p className="auth-poc-warning" role="note">
               don&apos;t put nothing serious here because I will save password without hashing it. Im serious
-              it&apos;s only POC. add to{" "}
+              it&apos;s only POC. Go to{" "}
               <a
                 href="https://brogress-f.onrender.com/u/kapiet"
                 target="_blank"
@@ -88,7 +91,7 @@ export function LoginGate({ nick, onLoggedIn }) {
                 disabled={busy || !password}
                 onClick={mode === "register" ? submitRegister : submitLogin}
               >
-                {busy ? "…" : mode === "register" ? "Utwórz konto" : "Zaloguj"}
+                {busy ? "…" : mode === "register" ? "Create account" : "Log in"}
               </button>
             </div>
             <button
@@ -100,7 +103,7 @@ export function LoginGate({ nick, onLoggedIn }) {
                 setError("");
               }}
             >
-              {mode === "login" ? "Pierwszy raz? Utwórz konto" : "Mam konto — zaloguj"}
+              {mode === "login" ? "First time? Create an account" : "I have an account — log in"}
             </button>
           </div>
         </div>
