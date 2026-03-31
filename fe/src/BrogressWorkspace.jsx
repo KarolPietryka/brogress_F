@@ -36,6 +36,7 @@ export function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) 
   const [graphVolumePoints, setGraphVolumePoints] = useState([]);
   const [graphVolumeError, setGraphVolumeError] = useState("");
   const [graphVolumeLoading, setGraphVolumeLoading] = useState(false);
+  const [graphReloadTrigger, setGraphReloadTrigger] = useState(0);
 
   const refreshWorkoutsFromServer = useCallback(async () => {
     const woRes = await workoutClient.getWorkouts();
@@ -116,7 +117,7 @@ export function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) 
     return () => {
       cancelled = true;
     };
-  }, [graphShellOpen]);
+  }, [graphShellOpen, graphReloadTrigger, workoutClient]);
 
   const canSend = useMemo(() => draftLines.length > 0, [draftLines]);
 
@@ -201,6 +202,9 @@ export function BrogressWorkspace({ authToken, urlNick, onAuthLost, onLogout }) 
         setTemplateLoadError(
           `Trening zapisany, ale lista nie odświeżyła się (${e2 instanceof Error ? e2.message : "unknown error"}).`
         );
+      }
+      if (graphShellOpen) {
+        setGraphReloadTrigger((v) => v + 1);
       }
     } catch (e) {
       setSubmitError(
