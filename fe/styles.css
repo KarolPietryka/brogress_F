@@ -874,7 +874,7 @@ body {
 
 /*
  * Narrow modal rows: must live AFTER .composerPickTrigger* so mobile rules win.
- * Grid keeps handle | name (shrinks) | W | R | action in one row without overlap.
+ * Grid: handle | name column (body + exercise stacked) | W | R | action; same row height, controls stay in fixed columns.
  */
 @media (max-width: 640px) {
   .exerciseRow {
@@ -903,10 +903,10 @@ body {
     max-width: 100%;
     overflow: hidden;
     display: flex;
-    flex-direction: row;
+    flex-direction: column;
     flex-wrap: nowrap;
-    align-items: center;
-    gap: 6px;
+    align-items: stretch;
+    gap: 4px;
   }
 
   .exerciseFields {
@@ -942,22 +942,26 @@ body {
   }
 
   .exerciseNameCell .check-text {
-    flex: 1 1 0;
+    flex: 0 1 auto;
     min-width: 0;
+    width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .exerciseRow .muscleTag {
+  .exerciseRow:not(.exerciseRow--composer) .muscleTag {
+    align-self: flex-start;
+    max-width: 100%;
     flex: 0 1 auto;
     min-width: 0;
-    max-width: 72px;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .exerciseNameCell--composer {
+    flex-direction: column;
+    align-items: stretch;
     gap: 6px;
   }
 
@@ -991,17 +995,11 @@ body {
     background-position: right 6px center;
   }
 
-  .composerPickTrigger--group {
-    flex: 0 1 auto;
-    width: auto;
-    min-width: 96px;
-    max-width: 52%;
-  }
-
+  .composerPickTrigger--group,
   .composerPickTrigger--exercise {
-    flex: 1 1 0;
+    flex: none;
+    width: 100%;
     min-width: 0;
-    width: auto;
     max-width: none;
   }
 }
