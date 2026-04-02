@@ -818,12 +818,6 @@ body {
   gap: 10px;
 }
 
-@media (max-width: 560px) {
-  .exerciseNameCell--composer {
-    flex-wrap: wrap;
-  }
-}
-
 /* Composer row: opens prototype pick list (sheet / popover) */
 .composerPickTrigger {
   min-width: 0;
@@ -876,6 +870,140 @@ body {
 .composerPickTrigger--exercise {
   flex: 1;
   min-width: 0;
+}
+
+/*
+ * Narrow modal rows: must live AFTER .composerPickTrigger* so mobile rules win.
+ * Grid keeps handle | name (shrinks) | W | R | action in one row without overlap.
+ */
+@media (max-width: 640px) {
+  .exerciseRow {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) 44px 44px 36px;
+    column-gap: 6px;
+    align-items: center;
+    padding: 8px 10px;
+    min-height: 0;
+  }
+
+  .dragHandleSpacer,
+  .dragHandle {
+    grid-column: 1;
+    grid-row: 1;
+    margin: 0;
+    width: 26px;
+    height: 36px;
+    justify-self: center;
+  }
+
+  .exerciseNameCell {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .exerciseFields {
+    grid-column: 3 / 5;
+    grid-row: 1;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .rowAdd,
+  .rowRemove {
+    grid-column: 5;
+    grid-row: 1;
+    justify-self: end;
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+
+  .numField {
+    box-sizing: border-box;
+    width: 44px;
+    min-width: 0;
+    max-width: 44px;
+    height: 36px;
+    padding: 0 4px;
+    font-size: 12px;
+    border-radius: 10px;
+    text-align: center;
+  }
+
+  .exerciseNameCell .check-text {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .exerciseRow .muscleTag {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 72px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .exerciseNameCell--composer {
+    gap: 6px;
+  }
+
+  /* Composer: no drag column — use width for group + exercise pickers */
+  .exerciseRow--composer {
+    grid-template-columns: minmax(0, 1fr) 44px 44px 36px;
+  }
+
+  .exerciseRow--composer .dragHandleSpacer {
+    display: none;
+  }
+
+  .exerciseRow--composer .exerciseNameCell {
+    grid-column: 1;
+  }
+
+  .exerciseRow--composer .exerciseFields {
+    grid-column: 2 / 4;
+  }
+
+  .exerciseRow--composer .rowAdd {
+    grid-column: 4;
+  }
+
+  .composerPickTrigger {
+    height: 36px;
+    padding: 0 22px 0 8px;
+    font-size: 12px;
+    border-radius: 10px;
+    background-size: 11px 11px;
+    background-position: right 6px center;
+  }
+
+  .composerPickTrigger--group {
+    flex: 0 1 auto;
+    width: auto;
+    min-width: 96px;
+    max-width: 52%;
+  }
+
+  .composerPickTrigger--exercise {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+  }
 }
 
 /* Portal pick list (prototype): sheet on narrow, popover on wide */
