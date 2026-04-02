@@ -379,6 +379,8 @@ body {
   flex-direction: column;
   transform: translateY(8px) scale(0.99);
   animation: popIn 180ms ease-out forwards;
+  /* Native selects / lists follow app dark theme where the engine allows it */
+  color-scheme: dark;
 }
 
 .modal-head {
@@ -752,6 +754,292 @@ body {
 .rowRemove:hover {
   background: rgba(255, 90, 118, 0.15);
   color: rgba(255, 142, 154, 0.95);
+}
+
+.workoutComposerBlock {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin-bottom: 14px;
+  padding: 6px 0 14px;
+  margin-top: -2px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+    180deg,
+    rgba(12, 14, 18, 0.97) 0%,
+    rgba(12, 14, 18, 0.9) 70%,
+    rgba(12, 14, 18, 0.82) 100%
+  );
+  backdrop-filter: blur(10px);
+}
+
+.exerciseRow--composer {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.exerciseRow--composerFlash {
+  animation: composerRowBlueFlash 0.75s ease-out forwards;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes composerRowBlueFlash {
+  0% {
+    box-shadow: 0 0 0 0 transparent, 0 0 0 rgba(80, 170, 255, 0);
+  }
+  22% {
+    box-shadow: 0 0 0 3px rgba(120, 200, 255, 0.65), 0 0 36px rgba(70, 150, 255, 0.5);
+  }
+  55% {
+    box-shadow: 0 0 0 2px rgba(120, 200, 255, 0.35), 0 0 22px rgba(70, 150, 255, 0.28);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent, 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exerciseRow--composerFlash {
+    animation: none;
+  }
+}
+
+.dragHandleSpacer {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 40px;
+  margin: -4px 0 -4px -4px;
+  pointer-events: none;
+}
+
+.exerciseNameCell--composer {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+@media (max-width: 560px) {
+  .exerciseNameCell--composer {
+    flex-wrap: wrap;
+  }
+}
+
+/* Composer row: opens prototype pick list (sheet / popover) */
+.composerPickTrigger {
+  min-width: 0;
+  height: 46px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background-color: rgba(0, 0, 0, 0.18);
+  color: var(--text);
+  padding: 0 34px 0 12px;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  color-scheme: dark;
+  position: relative;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Cpath fill='%238991a1' d='M5,7.5L10,12.5L15,7.5z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+}
+
+.composerPickTrigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composerPickTrigger:focus-visible {
+  outline: 2px solid rgba(255, 207, 90, 0.55);
+  outline-offset: 2px;
+}
+
+.composerPickTrigger__text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerPickTrigger__text--ellipsis {
+  text-align: left;
+}
+
+.composerPickTrigger--group {
+  flex: 0 0 auto;
+  width: 118px;
+  max-width: 34%;
+}
+
+.composerPickTrigger--exercise {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Portal pick list (prototype): sheet on narrow, popover on wide */
+.pickList-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.pickList-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  background: rgba(2, 4, 8, 0.55);
+  backdrop-filter: blur(3px);
+  animation: pickListFadeIn 160ms ease-out;
+}
+
+.pickList-panel {
+  pointer-events: auto;
+  background: rgba(14, 16, 22, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  color-scheme: dark;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.pickList-panel--sheet {
+  position: relative;
+  width: 100%;
+  max-height: min(72vh, 520px);
+  border-radius: 20px 20px 0 0;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: pickSheetSlideUp 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.pickList-panel--popover {
+  flex-direction: column;
+  border-radius: 14px;
+  animation: pickListFadeIn 140ms ease-out;
+  overflow: hidden;
+}
+
+.pickList-sheetGrip {
+  width: 40px;
+  height: 5px;
+  margin: 10px auto 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  flex-shrink: 0;
+}
+
+.pickList-header {
+  flex-shrink: 0;
+  padding: 8px 16px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 207, 90, 0.88);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pickList-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px 8px 12px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.pickList-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 15px;
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.pickList-item:hover {
+  background: rgba(255, 207, 90, 0.08);
+  border-color: rgba(255, 207, 90, 0.2);
+}
+
+.pickList-item:focus-visible {
+  outline: 2px solid rgba(120, 200, 255, 0.65);
+  outline-offset: 0;
+}
+
+@keyframes pickListFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pickSheetSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pickList-backdrop,
+  .pickList-panel--sheet,
+  .pickList-panel--popover {
+    animation: none;
+  }
+}
+
+.rowAdd {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 207, 90, 0.42);
+  background: rgba(255, 207, 90, 0.12);
+  color: rgba(255, 230, 170, 0.98);
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.rowAdd:hover:not(:disabled) {
+  background: rgba(255, 207, 90, 0.2);
+  border-color: rgba(255, 207, 90, 0.6);
+}
+
+.rowAdd:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.workoutPlanEmpty {
+  margin-top: 4px;
 }
 
 .exerciseLeft {

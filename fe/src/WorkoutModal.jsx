@@ -1,7 +1,10 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ComposerPickListPortal } from "./ComposerPickList.jsx";
 import { MUSCLE_GROUPS } from "./workoutData.js";
 import {
   digits4,
+  draftLinesOnlyStatusChanged,
+  lastPlannedComposerPrefill,
   newDraftLineId,
   normalizeExerciseStatus,
   reorderDraftIndices,
@@ -23,20 +26,55 @@ export function WorkoutModal({
   onClose,
   onSubmit,
 }) {
-  const [activeGroup, setActiveGroup] = useState(null);
+  const [composerGroup, setComposerGroup] = useState(() => MUSCLE_GROUPS[0] || "");
+  const [composerExercise, setComposerExercise] = useState("");
+  const [composerWeight, setComposerWeight] = useState("0");
+  const [composerReps, setComposerReps] = useState("");
+  /** Prototype: bottom sheet / popover pick list — "group" | "exercise" | null */
+  const [composerPickOpen, setComposerPickOpen] = useState(null);
+  /** Blue glow on the top composer row after + */
+  const [composerRowFlash, setComposerRowFlash] = useState(false);
+  const groupPickAnchorRef = useRef(null);
+  const exercisePickAnchorRef = useRef(null);
   const [draftDragOverIndex, setDraftDragOverIndex] = useState(null);
   const [draftDraggingIndex, setDraftDraggingIndex] = useState(null);
   const draftFlipContainerRef = useRef(null);
   const prevDraftLayoutRef = useRef(new Map());
+  const prevDraftLinesForFlipRef = useRef(null);
+  const modalBodyRef = useRef(null);
 
-  const pickerExercises = useMemo(() => {
-    if (!activeGroup) return [];
-    return exercisesByGroup[activeGroup] || [];
-  }, [activeGroup, exercisesByGroup]);
+  const composerExerciseOptions = exercisesByGroup[composerGroup] || [];
+
+  const composerPrefillKey = useMemo(() => {
+    const ids = draftLines.map((l) => l.id).join("|");
+    const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
+    return `${ids}|${p.plannedRowId}|${p.group ?? ""}|${p.name ?? ""}|${p.weight}|${p.reps}`;
+  }, [draftLines, exerciseMeta]);
+
+  useLayoutEffect(() => {
+    const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
+    setComposerWeight(p.weight);
+    setComposerReps(p.reps);
+    if (p.plannedRowId) {
+      setComposerGroup(p.group);
+      setComposerExercise(p.name);
+    } else if (draftLines.length === 0) {
+      setComposerGroup(MUSCLE_GROUPS[0] || "");
+      setComposerExercise("");
+    } else {
+      setComposerExercise("");
+    }
+  }, [composerPrefillKey, draftLines, exerciseMeta]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === "Escape") onClose();
+      if (e.key !== "Escape") return;
+      if (composerPickOpen) {
+        e.preventDefault();
+        setComposerPickOpen(null);
+        return;
+      }
+      onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
@@ -44,20 +82,43 @@ export function WorkoutModal({
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [onClose]);
+  }, [onClose, composerPickOpen]);
+
+  useEffect(() => {
+    const el = modalBodyRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      prevDraftLayoutRef.current = new Map();
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   useLayoutEffect(() => {
     const container = draftFlipContainerRef.current;
     if (!container || draftLines.length === 0) {
       prevDraftLayoutRef.current = new Map();
+      prevDraftLinesForFlipRef.current = draftLines;
       return;
     }
+
+    const prevLines = prevDraftLinesForFlipRef.current;
+    const statusOnly =
+      prevLines != null && draftLinesOnlyStatusChanged(prevLines, draftLines);
+    prevDraftLinesForFlipRef.current = draftLines;
+
     const rowEls = container.querySelectorAll("[data-draft-row-id]");
     const nextRects = new Map();
     for (const el of rowEls) {
       const id = el.getAttribute("data-draft-row-id");
       if (id) nextRects.set(id, el.getBoundingClientRect());
     }
+
+    if (statusOnly) {
+      prevDraftLayoutRef.current = nextRects;
+      return;
+    }
+
     const prev = prevDraftLayoutRef.current;
     const canFlip =
       prev.size > 0 &&
@@ -103,13 +164,27 @@ export function WorkoutModal({
     prevDraftLayoutRef.current = nextRects;
   }, [draftLines]);
 
-  function addExerciseFromPicker(groupName, exerciseName) {
+  function addExerciseFromComposer() {
+    if (!composerGroup || !composerExercise) return;
     const id = newDraftLineId();
-    setDraftLines((prev) => [...prev, { id, group: groupName, name: exerciseName, status: "PLANNED" }]);
+    setDraftLines((prev) => [
+      ...prev,
+      { id, group: composerGroup, name: composerExercise, status: "PLANNED" },
+    ]);
     setExerciseMeta((prev) => ({
       ...prev,
-      [id]: { weight: "0", reps: "" },
+      [id]: { weight: composerWeight || "0", reps: composerReps || "" },
     }));
+    setComposerExercise("");
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (!reduceMotion) {
+      setComposerRowFlash(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setComposerRowFlash(true));
+      });
+    }
   }
 
   function removeDraftLine(lineId) {
@@ -156,15 +231,36 @@ export function WorkoutModal({
 
   return (
     <>
+      <ComposerPickListPortal
+        open={composerPickOpen === "group"}
+        title="Muscle group"
+        items={MUSCLE_GROUPS}
+        anchorRef={groupPickAnchorRef}
+        onClose={() => setComposerPickOpen(null)}
+        onPick={(g) => {
+          setComposerGroup(g);
+          setComposerExercise((prev) => {
+            const nextList = exercisesByGroup[g] || [];
+            return nextList.includes(prev) ? prev : "";
+          });
+        }}
+      />
+      <ComposerPickListPortal
+        open={composerPickOpen === "exercise"}
+        title="Exercise"
+        items={composerExerciseOptions}
+        anchorRef={exercisePickAnchorRef}
+        onClose={() => setComposerPickOpen(null)}
+        onPick={(name) => setComposerExercise(name)}
+      />
       <div className="modal-backdrop" onClick={onClose} />
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
         <div className="modal-card">
           <div className="modal-head">
             <div>
-              <div className="modal-kicker">Add workout</div>
-              <h3 className="modal-title" id="modalTitle">
-                Pick a group, tap exercises to add
-              </h3>
+              <div className="modal-kicker" id="modalTitle">
+                Add workout
+              </div>
             </div>
             <button
               className="icon-btn"
@@ -176,49 +272,8 @@ export function WorkoutModal({
             </button>
           </div>
 
-          <div className="modal-body">
+          <div className="modal-body" ref={modalBodyRef}>
             {catalogError ? <div className="errorText">{catalogError}</div> : null}
-            <div className="grid">
-              {MUSCLE_GROUPS.map((g) => {
-                const isSelected = activeGroup === g;
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    className={`choice ${isSelected ? "selected" : ""}`}
-                    onClick={() => setActiveGroup(g)}
-                  >
-                    <div className="choice-title">{g}</div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={{ height: 10 }} />
-
-            {!activeGroup ? (
-              <div className="note">Choose a muscle group to see exercises you can add.</div>
-            ) : pickerExercises.length === 0 ? (
-              <div className="note">No exercises for this group yet.</div>
-            ) : (
-              <section className="groupSection" aria-label={`Exercises for ${activeGroup}`}>
-                <div className="groupHeader">{activeGroup} — tap to add</div>
-                <div className="pickerList">
-                  {pickerExercises.map((ex) => (
-                    <button
-                      key={ex}
-                      type="button"
-                      className="exercisePick"
-                      onClick={() => addExerciseFromPicker(activeGroup, ex)}
-                    >
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <div style={{ height: 16 }} />
             <section className="groupSection" aria-label="Current workout">
               <div className="groupHeaderRow">
                 <div className="groupHeader">Your workout</div>
@@ -234,59 +289,141 @@ export function WorkoutModal({
                   </button>
                 ) : null}
               </div>
+
+              <div className="workoutComposerBlock">
+                <div
+                  className={`exerciseRow exerciseRow--composer${
+                    composerRowFlash ? " exerciseRow--composerFlash" : ""
+                  }`}
+                  aria-label="Add new exercise"
+                  onAnimationEnd={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (!e.animationName.includes("composerRowBlueFlash")) return;
+                    setComposerRowFlash(false);
+                  }}
+                >
+                  <div className="dragHandleSpacer" aria-hidden="true" />
+                  <div className="exerciseNameCell exerciseNameCell--composer">
+                    <button
+                      ref={groupPickAnchorRef}
+                      type="button"
+                      className="composerPickTrigger composerPickTrigger--group"
+                      aria-label="Muscle group"
+                      aria-haspopup="listbox"
+                      aria-expanded={composerPickOpen === "group"}
+                      disabled={isSubmitting}
+                      onClick={() =>
+                        setComposerPickOpen((p) => (p === "group" ? null : "group"))
+                      }
+                    >
+                      <span className="composerPickTrigger__text">{composerGroup}</span>
+                    </button>
+                    <button
+                      ref={exercisePickAnchorRef}
+                      type="button"
+                      className="composerPickTrigger composerPickTrigger--exercise"
+                      aria-label="Exercise"
+                      aria-haspopup="listbox"
+                      aria-expanded={composerPickOpen === "exercise"}
+                      disabled={isSubmitting || composerExerciseOptions.length === 0}
+                      onClick={() =>
+                        setComposerPickOpen((p) => (p === "exercise" ? null : "exercise"))
+                      }
+                    >
+                      <span className="composerPickTrigger__text composerPickTrigger__text--ellipsis">
+                        {composerExerciseOptions.length === 0
+                          ? "No exercises"
+                          : composerExercise || "Exercise"}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="exerciseFields">
+                    <input
+                      className="numField"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={4}
+                      placeholder="Weight"
+                      value={composerWeight}
+                      disabled={isSubmitting}
+                      onChange={(e) => setComposerWeight(digits4(e.target.value))}
+                    />
+                    <input
+                      className="numField"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={4}
+                      placeholder="Reps"
+                      value={composerReps}
+                      disabled={isSubmitting}
+                      onChange={(e) => setComposerReps(digits4(e.target.value))}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="rowAdd"
+                    disabled={isSubmitting || !composerExercise}
+                    aria-label="Add exercise to list"
+                    onClick={addExerciseFromComposer}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
               {draftLines.length > 0 ? (
                 <div className="checks checks--draftFlip" ref={draftFlipContainerRef}>
                   {draftLines.map((line, index) => {
                     const rowStatus = normalizeExerciseStatus(line);
                     const canTogglePlanStatus = rowStatus === "PLANNED" || rowStatus === "NEXT";
                     return (
-                    <div
-                      data-draft-row-id={line.id}
-                      className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}${
-                        draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
-                      }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}${
-                        canTogglePlanStatus ? " exerciseRow--planClickable" : ""
-                      }`}
-                      key={line.id}
-                      tabIndex={canTogglePlanStatus && !isSubmitting ? 0 : undefined}
-                      aria-label={
-                        canTogglePlanStatus
-                          ? `${line.name}: ${rowStatus === "NEXT" ? "następne — kliknij pasek, by ustawić jako planowane" : "planowane — kliknij pasek, by ustawić jako następne"}`
-                          : undefined
-                      }
-                      onClick={
-                        canTogglePlanStatus && !isSubmitting
-                          ? () => toggleDraftLinePlanStatus(line.id)
-                          : undefined
-                      }
-                      onKeyDown={
-                        canTogglePlanStatus && !isSubmitting
-                          ? (e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                toggleDraftLinePlanStatus(line.id);
+                      <div
+                        data-draft-row-id={line.id}
+                        className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}${
+                          draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
+                        }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}${
+                          canTogglePlanStatus ? " exerciseRow--planClickable" : ""
+                        }`}
+                        key={line.id}
+                        tabIndex={canTogglePlanStatus && !isSubmitting ? 0 : undefined}
+                        aria-label={
+                          canTogglePlanStatus
+                            ? `${line.name}: ${rowStatus === "NEXT" ? "następne — kliknij pasek, by ustawić jako planowane" : "planowane — kliknij pasek, by ustawić jako następne"}`
+                            : undefined
+                        }
+                        onClick={
+                          canTogglePlanStatus && !isSubmitting
+                            ? () => toggleDraftLinePlanStatus(line.id)
+                            : undefined
+                        }
+                        onKeyDown={
+                          canTogglePlanStatus && !isSubmitting
+                            ? (e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  toggleDraftLinePlanStatus(line.id);
+                                }
                               }
-                            }
-                          : undefined
-                      }
-                      onDragOver={(e) => {
-                        if (isSubmitting) return;
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "move";
-                        setDraftDragOverIndex(index);
-                      }}
-                      onDrop={(e) => {
-                        if (isSubmitting) return;
-                        e.preventDefault();
-                        const raw =
-                          e.dataTransfer.getData(DRAFT_DND_TYPE) ||
-                          e.dataTransfer.getData("text/plain");
-                        const fromIndex = Number.parseInt(raw, 10);
-                        setDraftDragOverIndex(null);
-                        if (!Number.isFinite(fromIndex)) return;
-                        moveDraftLine(fromIndex, index);
-                      }}
-                    >
+                            : undefined
+                        }
+                        onDragOver={(e) => {
+                          if (isSubmitting) return;
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDraftDragOverIndex(index);
+                        }}
+                        onDrop={(e) => {
+                          if (isSubmitting) return;
+                          e.preventDefault();
+                          const raw =
+                            e.dataTransfer.getData(DRAFT_DND_TYPE) ||
+                            e.dataTransfer.getData("text/plain");
+                          const fromIndex = Number.parseInt(raw, 10);
+                          setDraftDragOverIndex(null);
+                          if (!Number.isFinite(fromIndex)) return;
+                          moveDraftLine(fromIndex, index);
+                        }}
+                      >
                       <div
                         className="dragHandle"
                         draggable={!isSubmitting}
@@ -343,12 +480,12 @@ export function WorkoutModal({
                       >
                         ×
                       </button>
-                    </div>
+                      </div>
                     );
                   })}
                 </div>
               ) : (
-                <div className="note">Nothing here yet.</div>
+                <div className="note workoutPlanEmpty">Nothing here yet.</div>
               )}
             </section>
           </div>

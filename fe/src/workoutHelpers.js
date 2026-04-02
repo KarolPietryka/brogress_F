@@ -17,6 +17,42 @@ export function rowStatusModifier(status) {
   return "done";
 }
 
+/**
+ * Last PLANNED row (bottom-up): group, name, weight/reps for the “add exercise” composer.
+ * When none: plannedRowId/group/name empty/null, weight/reps default.
+ */
+export function lastPlannedComposerPrefill(draftLines, exerciseMeta) {
+  const empty = {
+    plannedRowId: "",
+    group: null,
+    name: null,
+    weight: "0",
+    reps: "",
+  };
+  if (!draftLines?.length) return { ...empty };
+  for (let i = draftLines.length - 1; i >= 0; i--) {
+    const line = draftLines[i];
+    if (normalizeExerciseStatus(line) !== "PLANNED") continue;
+    const m = exerciseMeta[line.id] || { weight: "0", reps: "" };
+    const w = m.weight != null && String(m.weight) !== "" ? String(m.weight) : "0";
+    const r = m.reps != null && String(m.reps) !== "" ? String(m.reps) : "";
+    return {
+      plannedRowId: line.id,
+      group: line.group,
+      name: line.name,
+      weight: w,
+      reps: r,
+    };
+  }
+  return { ...empty };
+}
+
+/** Weight/reps only — same source as {@link lastPlannedComposerPrefill}. */
+export function lastPlannedExerciseMeta(draftLines, exerciseMeta) {
+  const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
+  return { weight: p.weight, reps: p.reps };
+}
+
 function exerciseToRow(group, e) {
   const repsStr = e.reps != null && e.reps !== "" ? String(e.reps) : "";
   const hasReps = repsStr !== "";
@@ -134,6 +170,20 @@ export const DRAFT_DND_TYPE = "application/x-brogress-draft-index";
 
 export const DRAFT_FLIP_MS = 320;
 export const DRAFT_FLIP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+/**
+ * True when {@code next} is the same ordered list as {@code prev} (same id/group/name per index);
+ * only {@code status} may differ. Used to skip FLIP — viewport rects go stale after scroll.
+ */
+export function draftLinesOnlyStatusChanged(prev, next) {
+  if (prev == null || prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i++) {
+    const a = prev[i];
+    const b = next[i];
+    if (a.id !== b.id || a.group !== b.group || a.name !== b.name) return false;
+  }
+  return true;
+}
 
 /** Reorder so the item at {@code fromIndex} ends up immediately before the row that was at {@code toIndex} (drop target). */
 export function reorderDraftIndices(lines, fromIndex, toIndex) {
