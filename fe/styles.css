@@ -361,7 +361,8 @@ body {
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 18px;
+  padding: max(18px, env(safe-area-inset-top, 0px)) max(18px, env(safe-area-inset-right, 0px))
+    max(18px, env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px));
   z-index: 60;
   overflow: auto;
 }
@@ -369,6 +370,7 @@ body {
 .modal-card {
   width: min(720px, 100%);
   max-height: calc(100vh - 36px);
+  max-height: calc(100dvh - max(36px, env(safe-area-inset-top, 0px) + env(safe-area-inset-bottom, 0px)));
   border-radius: 22px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(10, 12, 16, 0.55);
@@ -445,6 +447,17 @@ body {
 
 .spacer {
   flex: 1;
+}
+
+@media (max-width: 640px) {
+  .modal {
+    /* Below status / URL chrome: keep global close (X) in the visual viewport */
+    padding-top: max(28px, calc(env(safe-area-inset-top, 0px) + 36px));
+  }
+
+  .modal-head .icon-btn {
+    flex-shrink: 0;
+  }
 }
 
 @keyframes fadeIn {
