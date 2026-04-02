@@ -614,6 +614,21 @@ body {
   transition: opacity 0.2s ease, box-shadow 0.2s ease;
 }
 
+/* Whole row toggles PLANNED ↔ NEXT (inputs / drag / remove stop propagation). */
+.exerciseRow--planClickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.exerciseRow--planClickable:hover {
+  filter: brightness(1.07);
+}
+
+.exerciseRow--planClickable:focus-visible {
+  outline: 2px solid rgba(120, 200, 255, 0.75);
+  outline-offset: 2px;
+}
+
 .dragHandle {
   flex: 0 0 auto;
   display: grid;

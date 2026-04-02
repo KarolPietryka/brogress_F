@@ -3,6 +3,7 @@ import { MUSCLE_GROUPS } from "./workoutData.js";
 import {
   digits4,
   newDraftLineId,
+  normalizeExerciseStatus,
   reorderDraftIndices,
   rowStatusModifier,
   DRAFT_DND_TYPE,
@@ -131,6 +132,20 @@ export function WorkoutModal({
     setDraftLines((prev) => reorderDraftIndices(prev, fromIndex, toIndex));
   }
 
+  /** PLANNED ↔ NEXT so several rows can be submitted as performed in one Add (BE stores NEXT as DONE). */
+  function toggleDraftLinePlanStatus(lineId) {
+    if (isSubmitting) return;
+    setDraftLines((prev) =>
+      prev.map((line) => {
+        if (line.id !== lineId) return line;
+        const s = normalizeExerciseStatus(line);
+        if (s === "PLANNED") return { ...line, status: "NEXT" };
+        if (s === "NEXT") return { ...line, status: "PLANNED" };
+        return line;
+      })
+    );
+  }
+
   function setExerciseField(lineId, field, raw) {
     const value = digits4(raw);
     setExerciseMeta((prev) => ({
@@ -221,13 +236,39 @@ export function WorkoutModal({
               </div>
               {draftLines.length > 0 ? (
                 <div className="checks checks--draftFlip" ref={draftFlipContainerRef}>
-                  {draftLines.map((line, index) => (
+                  {draftLines.map((line, index) => {
+                    const rowStatus = normalizeExerciseStatus(line);
+                    const canTogglePlanStatus = rowStatus === "PLANNED" || rowStatus === "NEXT";
+                    return (
                     <div
                       data-draft-row-id={line.id}
                       className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}${
                         draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
-                      }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}`}
+                      }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}${
+                        canTogglePlanStatus ? " exerciseRow--planClickable" : ""
+                      }`}
                       key={line.id}
+                      tabIndex={canTogglePlanStatus && !isSubmitting ? 0 : undefined}
+                      aria-label={
+                        canTogglePlanStatus
+                          ? `${line.name}: ${rowStatus === "NEXT" ? "następne — kliknij pasek, by ustawić jako planowane" : "planowane — kliknij pasek, by ustawić jako następne"}`
+                          : undefined
+                      }
+                      onClick={
+                        canTogglePlanStatus && !isSubmitting
+                          ? () => toggleDraftLinePlanStatus(line.id)
+                          : undefined
+                      }
+                      onKeyDown={
+                        canTogglePlanStatus && !isSubmitting
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleDraftLinePlanStatus(line.id);
+                              }
+                            }
+                          : undefined
+                      }
                       onDragOver={(e) => {
                         if (isSubmitting) return;
                         e.preventDefault();
@@ -251,6 +292,7 @@ export function WorkoutModal({
                         draggable={!isSubmitting}
                         title="Przeciągnij, aby zmienić kolejność"
                         aria-label={`Zmień kolejność: ${line.name}`}
+                        onClick={(e) => e.stopPropagation()}
                         onDragStart={(e) => {
                           setDraftDraggingIndex(index);
                           e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
@@ -270,7 +312,7 @@ export function WorkoutModal({
                         </span>
                         <span className="check-text">{line.name}</span>
                       </div>
-                      <div className="exerciseFields">
+                      <div className="exerciseFields" onClick={(e) => e.stopPropagation()}>
                         <input
                           className="numField"
                           inputMode="numeric"
@@ -294,12 +336,16 @@ export function WorkoutModal({
                         type="button"
                         className="rowRemove"
                         aria-label={`Remove ${line.name}`}
-                        onClick={() => removeDraftLine(line.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeDraftLine(line.id);
+                        }}
                       >
                         ×
                       </button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="note">Nothing here yet.</div>
