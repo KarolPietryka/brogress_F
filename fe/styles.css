@@ -879,7 +879,7 @@ body {
 @media (max-width: 640px) {
   .exerciseRow {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) 44px 44px 36px;
+    grid-template-columns: 26px minmax(0, 1fr) 44px 44px 34px;
     column-gap: 6px;
     align-items: center;
     padding: 8px 10px;
@@ -923,10 +923,23 @@ body {
   .rowRemove {
     grid-column: 5;
     grid-row: 1;
-    justify-self: end;
+    justify-self: center;
+    align-self: center;
+    box-sizing: border-box;
     width: 34px;
+    min-width: 0;
+    max-width: 34px;
     height: 34px;
+    padding: 0;
+    margin: 0;
     font-size: 18px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    -webkit-appearance: none;
+    appearance: none;
   }
 
   .numField {
@@ -967,7 +980,7 @@ body {
 
   /* Composer: no drag column — use width for group + exercise pickers */
   .exerciseRow--composer {
-    grid-template-columns: minmax(0, 1fr) 44px 44px 36px;
+    grid-template-columns: minmax(0, 1fr) 44px 44px 34px;
   }
 
   .exerciseRow--composer .dragHandleSpacer {
