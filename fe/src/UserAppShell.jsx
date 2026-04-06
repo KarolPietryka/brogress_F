@@ -1,39 +1,44 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { BrogressWorkspace } from "./BrogressWorkspace.jsx";
 import { LoginGate } from "./LoginGate.jsx";
-
-const STORAGE_TOKEN = "brogress_token";
-const STORAGE_NICK = "brogress_nick";
+import {
+  clearAuthFromStorage,
+  readAuthFromStorage,
+  saveAuthToStorage,
+} from "./authStorage.js";
 
 export function UserAppShell() {
   const { nick: nickParam } = useParams();
+  const navigate = useNavigate();
   const decodedNick = decodeURIComponent(nickParam || "").trim();
   const [token, setToken] = useState(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const t = sessionStorage.getItem(STORAGE_TOKEN);
-    const n = sessionStorage.getItem(STORAGE_NICK);
-    if (t && n && n.toLowerCase() === decodedNick.toLowerCase()) {
-      setToken(t);
+    const stored = readAuthFromStorage();
+    if (stored && stored.nick.toLowerCase() === decodedNick.toLowerCase()) {
+      setToken(stored.token);
     } else {
-      sessionStorage.removeItem(STORAGE_TOKEN);
-      sessionStorage.removeItem(STORAGE_NICK);
+      clearAuthFromStorage();
       setToken(null);
     }
     setReady(true);
   }, [decodedNick]);
 
-  const saveAuth = useCallback((t, canonicalNick) => {
-    sessionStorage.setItem(STORAGE_TOKEN, t);
-    sessionStorage.setItem(STORAGE_NICK, canonicalNick);
-    setToken(t);
-  }, []);
+  const saveAuth = useCallback(
+    (t, canonicalNick) => {
+      saveAuthToStorage(t, canonicalNick);
+      setToken(t);
+      if (canonicalNick.toLowerCase() !== decodedNick.toLowerCase()) {
+        navigate(`/u/${encodeURIComponent(canonicalNick)}`, { replace: true });
+      }
+    },
+    [decodedNick, navigate]
+  );
 
   const clearAuth = useCallback(() => {
-    sessionStorage.removeItem(STORAGE_TOKEN);
-    sessionStorage.removeItem(STORAGE_NICK);
+    clearAuthFromStorage();
     setToken(null);
   }, []);
 
@@ -52,7 +57,7 @@ export function UserAppShell() {
     );
   }
   if (!token) {
-    return <LoginGate nick={decodedNick} onLoggedIn={saveAuth} />;
+    return <LoginGate initialNick={decodedNick} onLoggedIn={saveAuth} />;
   }
   return (
     <BrogressWorkspace
