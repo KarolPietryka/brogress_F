@@ -35,9 +35,10 @@ function WorkoutRowTile({ row }) {
   );
 }
 
-export function WorkoutListPanel({ items, loadError }) {
+export function WorkoutListPanel({ items, loadError, onSelectWorkout }) {
   const gridCols = useSummaryGridColumns();
   const [expandedHistoricalIds, setExpandedHistoricalIds] = useState(() => new Set());
+  const selectable = typeof onSelectWorkout === "function";
 
   function toggleHistoricalExpanded(id) {
     setExpandedHistoricalIds((prev) => {
@@ -46,6 +47,21 @@ export function WorkoutListPanel({ items, loadError }) {
       else next.add(id);
       return next;
     });
+  }
+
+  function editKeyDown(e, item) {
+    if (!selectable) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onSelectWorkout(item);
+    }
+  }
+
+  function expandKeyDown(e, id) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleHistoricalExpanded(id);
+    }
   }
 
   return (
@@ -61,39 +77,80 @@ export function WorkoutListPanel({ items, loadError }) {
           const isLatest = index === 0;
           const expanded = isLatest || expandedHistoricalIds.has(item.id);
           const rows = item.rows || [];
+          const dateLabel = formatWorkoutDate(item.workoutDate);
           const maxSlots = Math.max(1, gridCols - 1);
           const hasOverflow = rows.length > maxSlots;
           const visibleCount = hasOverflow ? maxSlots : rows.length;
           const visibleRows = rows.slice(0, visibleCount);
 
-          return (
-            <div className="card" key={item.id}>
-              <div className="card-top">
-                <div className="card-title">{formatWorkoutDate(item.workoutDate)}</div>
-                {!isLatest && expanded ? (
-                  <button
-                    type="button"
-                    className="workoutSummaryCollapse"
-                    onClick={() => toggleHistoricalExpanded(item.id)}
-                  >
-                    Collapse
-                  </button>
-                ) : null}
-              </div>
-              {expanded ? (
+          // Latest session: one tap opens the same modal as Add exercise.
+          if (isLatest) {
+            return (
+              <div
+                className={`card${selectable ? " card--selectable" : ""}`}
+                key={item.id}
+                role={selectable ? "button" : undefined}
+                tabIndex={selectable ? 0 : undefined}
+                aria-label={selectable ? `Open workout editor for ${dateLabel}` : undefined}
+                onClick={selectable ? () => onSelectWorkout(item) : undefined}
+                onKeyDown={selectable ? (e) => editKeyDown(e, item) : undefined}
+              >
+                <div className="card-top">
+                  <div className="card-title">{dateLabel}</div>
+                </div>
                 <div className="workoutRows">
                   {rows.map((row, idx) => (
                     <WorkoutRowTile key={`${item.id}-${idx}`} row={row} />
                   ))}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  className="workoutSummaryCollapsedHit"
-                  onClick={() => toggleHistoricalExpanded(item.id)}
-                  aria-expanded="false"
-                  aria-label={`Show full workout summary for ${formatWorkoutDate(item.workoutDate)}`}
+              </div>
+            );
+          }
+
+          // Older sessions: if "…" overflow tile is shown while collapsed, first tap expands; then tap opens editor.
+          // When everything fits the preview grid, one tap opens the editor (no expand step needed).
+          if (!expanded && !hasOverflow) {
+            return (
+              <div
+                className={`card${selectable ? " card--selectable" : ""}`}
+                key={item.id}
+                role={selectable ? "button" : undefined}
+                tabIndex={selectable ? 0 : undefined}
+                aria-label={selectable ? `Open workout editor for ${dateLabel}` : undefined}
+                onClick={selectable ? () => onSelectWorkout(item) : undefined}
+                onKeyDown={selectable ? (e) => editKeyDown(e, item) : undefined}
+              >
+                <div className="card-top">
+                  <div className="card-title">{dateLabel}</div>
+                </div>
+                <div
+                  className="workoutRows workoutRows--collapsed"
+                  style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
                 >
+                  {rows.map((row, idx) => (
+                    <WorkoutRowTile key={`${item.id}-${idx}`} row={row} />
+                  ))}
+                </div>
+              </div>
+            );
+          }
+
+          if (!expanded) {
+            return (
+              <div
+                className="card card--expandCollapsed"
+                key={item.id}
+                role="button"
+                tabIndex={0}
+                aria-expanded="false"
+                aria-label={`Expand workout summary for ${dateLabel}`}
+                onClick={() => toggleHistoricalExpanded(item.id)}
+                onKeyDown={(e) => expandKeyDown(e, item.id)}
+              >
+                <div className="card-top">
+                  <div className="card-title">{dateLabel}</div>
+                </div>
+                <div className="workoutSummaryCollapsedHit workoutSummaryCollapsedHit--static">
                   <div
                     className="workoutRows workoutRows--collapsed"
                     style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
@@ -101,14 +158,43 @@ export function WorkoutListPanel({ items, loadError }) {
                     {visibleRows.map((row, idx) => (
                       <WorkoutRowTile key={`${item.id}-c-${idx}`} row={row} />
                     ))}
-                    {hasOverflow ? (
-                      <div className="workoutRow workoutRow--more" aria-hidden>
-                        <span className="workoutRowMoreDots">...</span>
-                      </div>
-                    ) : null}
+                    <div className="workoutRow workoutRow--more" aria-hidden>
+                      <span className="workoutRowMoreDots">...</span>
+                    </div>
                   </div>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div
+              className={`card${selectable ? " card--selectable" : ""}`}
+              key={item.id}
+              role={selectable ? "button" : undefined}
+              tabIndex={selectable ? 0 : undefined}
+              aria-label={selectable ? `Open workout editor for ${dateLabel}` : undefined}
+              onClick={selectable ? () => onSelectWorkout(item) : undefined}
+              onKeyDown={selectable ? (e) => editKeyDown(e, item) : undefined}
+            >
+              <div className="card-top">
+                <div className="card-title">{dateLabel}</div>
+                <button
+                  type="button"
+                  className="workoutSummaryCollapse"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleHistoricalExpanded(item.id);
+                  }}
+                >
+                  Collapse
                 </button>
-              )}
+              </div>
+              <div className="workoutRows">
+                {rows.map((row, idx) => (
+                  <WorkoutRowTile key={`${item.id}-${idx}`} row={row} />
+                ))}
+              </div>
             </div>
           );
         })}

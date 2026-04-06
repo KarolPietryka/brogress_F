@@ -413,6 +413,13 @@ body {
   font-size: 18px;
 }
 
+.modal-head-detail {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 .icon-btn {
   width: 40px;
   height: 40px;
@@ -696,6 +703,15 @@ body {
   border-color: rgba(110, 210, 160, 0.45);
   color: rgba(160, 235, 200, 0.95);
   background: rgba(70, 180, 130, 0.12);
+}
+
+/* DONE rows: drag starts from grip or name strip (see WorkoutModal shouldStartDraftRowDrag). */
+.exerciseRow--done .exerciseNameCell {
+  cursor: grab;
+}
+
+.exerciseRow--done.exerciseRow--dragging .exerciseNameCell {
+  cursor: grabbing;
 }
 
 .exerciseRow--planned {
@@ -1305,6 +1321,37 @@ body {
   letter-spacing: 0.01em;
 }
 
+.card--selectable {
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.card--selectable:hover {
+  border-color: rgba(255, 207, 90, 0.35);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.card--selectable:focus-visible {
+  outline: 2px solid rgba(255, 207, 90, 0.65);
+  outline-offset: 2px;
+}
+
+/* Historical workout still collapsed: first tap expands list on Home (before edit). */
+.card--expandCollapsed {
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.card--expandCollapsed:hover {
+  border-color: rgba(120, 200, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.card--expandCollapsed:focus-visible {
+  outline: 2px solid rgba(120, 200, 255, 0.65);
+  outline-offset: 2px;
+}
+
 .card-meta {
   font-family: var(--mono);
   font-size: 11px;
@@ -1389,7 +1436,7 @@ body {
   color: rgba(170, 220, 255, 0.9);
 }
 
-/* Collapsed history: one row; tap opens full summary (WorkoutListPanel) */
+/* Collapsed history strip (expand target lives on parent .card--expandCollapsed). */
 .workoutSummaryCollapsedHit {
   display: block;
   width: 100%;
@@ -1400,13 +1447,12 @@ body {
   text-align: inherit;
   font: inherit;
   color: inherit;
-  cursor: pointer;
+  cursor: inherit;
   border-radius: 0;
 }
 
-.workoutSummaryCollapsedHit:focus-visible {
-  outline: 2px solid rgba(120, 200, 255, 0.65);
-  outline-offset: 3px;
+.workoutSummaryCollapsedHit--static {
+  pointer-events: none;
 }
 
 .workoutRow--more {

@@ -39,6 +39,16 @@ export class WorkoutClient {
     }).then((r) => this.#withAuth(r));
   }
 
+  /** PUT /workout/{id} — full replace of sets (same JSON body as POST). */
+  putWorkout(workoutId, body) {
+    const url = `${WORKOUT_API_BASE}/workout/${encodeURIComponent(String(workoutId))}`;
+    return fetch(url, {
+      method: "PUT",
+      headers: this.#headers(true),
+      body: JSON.stringify(body),
+    }).then((r) => this.#withAuth(r));
+  }
+
   /**
    * GET /workout/exercises/picker?bodyPart= — { catalog: [{id,name}], custom: [{id,name}] }.
    */

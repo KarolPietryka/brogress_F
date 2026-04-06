@@ -125,6 +125,36 @@ export function mapPrefillToDraft(prefill) {
   return { draftLines, exerciseMeta };
 }
 
+/**
+ * Builds modal draft state from a {@link mapServerWorkout} list item (summary card).
+ */
+export function mapSummaryItemToDraft(mappedItem) {
+  const rows = mappedItem?.rows;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { draftLines: [], exerciseMeta: {} };
+  }
+  const draftLines = [];
+  const exerciseMeta = {};
+  for (const row of rows) {
+    const id = newDraftLineId();
+    draftLines.push({
+      id,
+      group: row.group,
+      name: row.name,
+      exerciseId: row.exerciseId != null ? row.exerciseId : undefined,
+      status: normalizeExerciseStatus(row),
+    });
+    exerciseMeta[id] = {
+      weight: prefillWeightField(row.weight),
+      reps:
+        row.reps != null && String(row.reps) !== ""
+          ? prefillNumberToDigitsField(row.reps)
+          : "",
+    };
+  }
+  return { draftLines, exerciseMeta };
+}
+
 function prefillNumberToDigitsField(value) {
   if (value == null || value === "") return "";
   const n = Number(value);

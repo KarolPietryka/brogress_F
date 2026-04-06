@@ -26,6 +26,8 @@ export function WorkoutModal({
   submitError,
   onClose,
   onSubmit,
+  modalKicker = "Add workout",
+  modalKickerDetail = "",
 }) {
   const [composerGroup, setComposerGroup] = useState(() => MUSCLE_GROUPS[0] || "");
   const [composerExercise, setComposerExercise] = useState("");
@@ -305,6 +307,14 @@ export function WorkoutModal({
     setDraftLines((prev) => reorderDraftIndices(prev, fromIndex, toIndex));
   }
 
+  /** HTML5 drag source is the row; PLANNED/NEXT may only start from the grip so row click still toggles status. */
+  function shouldStartDraftRowDrag(e, canTogglePlanStatus) {
+    const t = e.target;
+    if (t.closest?.(".exerciseFields") || t.closest?.(".rowRemove")) return false;
+    if (t.closest?.(".dragHandle")) return true;
+    return !canTogglePlanStatus;
+  }
+
   /** PLANNED ↔ NEXT so several rows can be submitted as performed in one Add (BE stores NEXT as DONE). */
   function toggleDraftLinePlanStatus(lineId) {
     if (isSubmitting) return;
@@ -429,8 +439,11 @@ export function WorkoutModal({
           <div className="modal-head">
             <div>
               <div className="modal-kicker" id="modalTitle">
-                Add workout
+                {modalKicker}
               </div>
+              {modalKickerDetail ? (
+                <p className="modal-head-detail">{modalKickerDetail}</p>
+              ) : null}
             </div>
             <button
               className="icon-btn"
@@ -561,6 +574,7 @@ export function WorkoutModal({
                           canTogglePlanStatus ? " exerciseRow--planClickable" : ""
                         }`}
                         key={line.id}
+                        draggable={!isSubmitting}
                         tabIndex={canTogglePlanStatus && !isSubmitting ? 0 : undefined}
                         aria-label={
                           canTogglePlanStatus
@@ -582,6 +596,20 @@ export function WorkoutModal({
                               }
                             : undefined
                         }
+                        onDragStart={(e) => {
+                          if (isSubmitting || !shouldStartDraftRowDrag(e, canTogglePlanStatus)) {
+                            e.preventDefault();
+                            return;
+                          }
+                          setDraftDraggingIndex(index);
+                          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
+                          e.dataTransfer.setData("text/plain", String(index));
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => {
+                          setDraftDragOverIndex(null);
+                          setDraftDraggingIndex(null);
+                        }}
                         onDragOver={(e) => {
                           if (isSubmitting) return;
                           e.preventDefault();
@@ -602,20 +630,9 @@ export function WorkoutModal({
                       >
                       <div
                         className="dragHandle"
-                        draggable={!isSubmitting}
                         title="Przeciągnij, aby zmienić kolejność"
                         aria-label={`Zmień kolejność: ${line.name}`}
                         onClick={(e) => e.stopPropagation()}
-                        onDragStart={(e) => {
-                          setDraftDraggingIndex(index);
-                          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
-                          e.dataTransfer.setData("text/plain", String(index));
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragEnd={() => {
-                          setDraftDragOverIndex(null);
-                          setDraftDraggingIndex(null);
-                        }}
                       >
                         <span className="dragHandleGrip" aria-hidden="true" />
                       </div>

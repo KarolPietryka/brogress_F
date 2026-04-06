@@ -5,6 +5,8 @@ import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js
 import {
   mapServerWorkout,
   mapPrefillToDraft,
+  mapSummaryItemToDraft,
+  formatWorkoutDate,
   parseIntOrNull,
   parseWeightIntOrNull,
 } from "./workoutHelpers.js";
@@ -23,6 +25,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   );
 
   const openModalInFlight = useRef(false);
+  /** When set, modal submit calls PUT /workout/{id} instead of POST /workout (today). */
+  const [editingWorkout, setEditingWorkout] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
   const [draftLines, setDraftLines] = useState([]);
   const [exerciseMeta, setExerciseMeta] = useState(() => ({}));
@@ -139,6 +143,21 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
 
     setDraftLines(prefillDraft);
     setExerciseMeta(prefillMeta);
+    setEditingWorkout(null);
+    setIsOpen(true);
+  }
+
+  function openModalForSummaryItem(mappedItem) {
+    if (openModalInFlight.current) return;
+    setIsSubmitting(false);
+    setSubmitError("");
+    const { draftLines: d, exerciseMeta: m } = mapSummaryItemToDraft(mappedItem);
+    setDraftLines(d);
+    setExerciseMeta(m);
+    setEditingWorkout({
+      id: mappedItem.id,
+      dateLabel: formatWorkoutDate(mappedItem.workoutDate),
+    });
     setIsOpen(true);
   }
 
@@ -146,6 +165,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     setIsOpen(false);
     setIsSubmitting(false);
     setSubmitError("");
+    setEditingWorkout(null);
   }
 
   async function addWorkoutToTemplate() {
@@ -185,7 +205,9 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     console.info("POST /workout payload", request);
 
     try {
-      const res = await workoutClient.postWorkouts(request);
+      const res = editingWorkout
+        ? await workoutClient.putWorkout(editingWorkout.id, request)
+        : await workoutClient.postWorkouts(request);
 
       if (!res.ok) {
         const text = await res.text().catch(() => "");
@@ -205,7 +227,9 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
       }
     } catch (e) {
       setSubmitError(
-        `Failed to POST to ${WORKOUT_API_BASE}/workout (${e instanceof Error ? e.message : "unknown error"})`
+        editingWorkout
+          ? `Failed to save workout (${e instanceof Error ? e.message : "unknown error"})`
+          : `Failed to POST to ${WORKOUT_API_BASE}/workout (${e instanceof Error ? e.message : "unknown error"})`
       );
       setIsSubmitting(false);
     }
@@ -252,6 +276,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           <WorkoutListPanel
             items={templateItems}
             loadError={templateLoadError}
+            onSelectWorkout={openModalForSummaryItem}
           />
         )}
       </section>
@@ -268,6 +293,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           submitError={submitError}
           onClose={closeModal}
           onSubmit={addWorkoutToTemplate}
+          modalKicker={editingWorkout ? "Edit workout" : "Add workout"}
+          modalKickerDetail={editingWorkout?.dateLabel ?? ""}
         />
       ) : null}
     </main>
