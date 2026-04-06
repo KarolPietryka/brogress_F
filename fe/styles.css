@@ -1389,6 +1389,61 @@ body {
   color: rgba(170, 220, 255, 0.9);
 }
 
+/* Collapsed history: one row; tap opens full summary (WorkoutListPanel) */
+.workoutSummaryCollapsedHit {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  text-align: inherit;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.workoutSummaryCollapsedHit:focus-visible {
+  outline: 2px solid rgba(120, 200, 255, 0.65);
+  outline-offset: 3px;
+}
+
+.workoutRow--more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100%;
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.workoutRow--more .workoutRowMoreDots {
+  font-family: var(--mono);
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.12em;
+}
+
+.workoutSummaryCollapse {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 207, 90, 0.9);
+  background: transparent;
+  border: 1px solid rgba(255, 207, 90, 0.4);
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.workoutSummaryCollapse:hover {
+  border-color: rgba(255, 207, 90, 0.6);
+  background: rgba(255, 207, 90, 0.08);
+}
+
 @media (max-width: 900px) {
   .workoutRows {
     grid-template-columns: repeat(3, minmax(0, 1fr));
