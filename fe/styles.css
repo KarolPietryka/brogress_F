@@ -739,14 +739,59 @@ body {
   gap: 8px;
 }
 
+/* Draft rows (wide): muscle tag uses slack in the name cell; exercise name keeps ellipsis. */
+.exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .muscleTag {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 68%;
+}
+
+/* Draft list only: inset exercise title so it does not hug the cell corner (composer sticky unchanged). */
+.exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .check-text {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-sizing: border-box;
+  padding: 3px 8px;
+}
+
+/* Current workout list: name chip matches row status; compact bar (shorter / tighter than W/R fields). */
+.checks--draftFlip .exerciseRow.exerciseRow--done .exerciseNameCell .check-text,
+.checks--draftFlip .exerciseRow.exerciseRow--planned .exerciseNameCell .check-text,
+.checks--draftFlip .exerciseRow.exerciseRow--next .exerciseNameCell .check-text {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: 10px;
+}
+
+.checks--draftFlip .exerciseRow.exerciseRow--done .exerciseNameCell .check-text {
+  border: 1px solid rgba(42, 118, 78, 0.88);
+  background: rgba(70, 180, 130, 0.16);
+}
+
+.checks--draftFlip .exerciseRow.exerciseRow--planned .exerciseNameCell .check-text {
+  border: 1px solid rgba(168, 124, 38, 0.88);
+  background: rgba(255, 207, 90, 0.14);
+}
+
+.checks--draftFlip .exerciseRow.exerciseRow--next .exerciseNameCell .check-text {
+  border: 1px solid rgba(38, 98, 168, 0.88);
+  background: rgba(80, 160, 240, 0.16);
+}
+
 .muscleTag {
   flex-shrink: 0;
   font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.07em;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: rgba(255, 207, 90, 0.95);
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid rgba(255, 207, 90, 0.38);
   background: rgba(255, 207, 90, 0.1);
@@ -881,10 +926,12 @@ body {
   text-align: left;
 }
 
+/* Share the name cell with exercise picker; cap width so reps/weight/action stay untouched. */
 .composerPickTrigger--group {
-  flex: 0 0 auto;
-  width: 118px;
-  max-width: 34%;
+  flex: 1.35 1 0;
+  min-width: 0;
+  width: auto;
+  max-width: 68%;
 }
 
 .composerPickTrigger--exercise {
@@ -894,39 +941,70 @@ body {
 
 /*
  * Narrow modal rows: must live AFTER .composerPickTrigger* so mobile rules win.
- * Grid: handle | name column (body + exercise stacked) | W | R | action; same row height, controls stay in fixed columns.
+ * Two rows: (1) handle + muscle/group label + W/R + action — (2) exercise name / picker full width.
+ * .exerciseNameCell uses display:contents so tag + title become direct grid children.
  */
 @media (max-width: 640px) {
   .exerciseRow {
     display: grid;
     grid-template-columns: 26px minmax(0, 1fr) 44px 44px 34px;
+    grid-template-rows: auto auto;
     column-gap: 6px;
-    align-items: center;
+    row-gap: 6px;
+    align-items: start;
     padding: 8px 10px;
     min-height: 0;
+  }
+
+  .exerciseRow .exerciseNameCell {
+    display: contents;
   }
 
   .dragHandleSpacer,
   .dragHandle {
     grid-column: 1;
-    grid-row: 1;
+    grid-row: 1 / span 2;
     margin: 0;
     width: 26px;
     height: 36px;
     justify-self: center;
+    align-self: center;
   }
 
-  .exerciseNameCell {
+  /* Draft row: muscle tag fills the flexible column (W/R/X stay fixed-width). */
+  .exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .muscleTag {
     grid-column: 2;
     grid-row: 1;
-    min-width: 0;
+    justify-self: stretch;
+    align-self: center;
+    width: 100%;
     max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    gap: 4px;
+    text-overflow: ellipsis;
+  }
+
+  .exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .check-text {
+    grid-column: 2 / span 4;
+    grid-row: 2;
+    min-width: 0;
+    align-self: center;
+    justify-self: stretch;
+    overflow: hidden;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.35;
+    padding: 8px 12px 10px;
+  }
+
+  .checks--draftFlip .exerciseRow.exerciseRow--done .exerciseNameCell .check-text,
+  .checks--draftFlip .exerciseRow.exerciseRow--planned .exerciseNameCell .check-text,
+  .checks--draftFlip .exerciseRow.exerciseRow--next .exerciseNameCell .check-text {
+    min-height: 30px;
+    padding: 0 8px;
+    border-radius: 8px;
+    align-items: center;
   }
 
   .exerciseFields {
@@ -937,6 +1015,7 @@ body {
     align-items: center;
     gap: 6px;
     min-width: 0;
+    align-self: center;
   }
 
   .rowAdd,
@@ -974,31 +1053,7 @@ body {
     text-align: center;
   }
 
-  .exerciseNameCell .check-text {
-    flex: 0 1 auto;
-    min-width: 0;
-    width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .exerciseRow:not(.exerciseRow--composer) .muscleTag {
-    align-self: flex-start;
-    max-width: 100%;
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .exerciseNameCell--composer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-
-  /* Composer: no drag column — use width for group + exercise pickers */
+  /* Composer: group + W/R + on row 1; exercise picker full width on row 2 */
   .exerciseRow--composer {
     grid-template-columns: minmax(0, 1fr) 44px 44px 34px;
   }
@@ -1007,16 +1062,39 @@ body {
     display: none;
   }
 
-  .exerciseRow--composer .exerciseNameCell {
+  .exerciseRow--composer .exerciseNameCell .composerPickTrigger--group {
     grid-column: 1;
+    grid-row: 1;
+    justify-self: stretch;
+    align-self: center;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
   }
 
-  .exerciseRow--composer .exerciseFields {
+  .exerciseRow--composer .exerciseNameCell .composerPickTrigger--exercise {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+    height: auto;
+    min-height: 36px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  .exerciseRow--composer > .exerciseFields {
     grid-column: 2 / 4;
+    grid-row: 1;
   }
 
-  .exerciseRow--composer .rowAdd {
+  .exerciseRow--composer > .rowAdd {
     grid-column: 4;
+    grid-row: 1;
+  }
+
+  .exerciseRow--composer .composerPickTrigger--exercise .composerPickTrigger__text {
+    white-space: normal;
+    line-height: 1.25;
   }
 
   .composerPickTrigger {
@@ -1031,9 +1109,7 @@ body {
   .composerPickTrigger--group,
   .composerPickTrigger--exercise {
     flex: none;
-    width: 100%;
     min-width: 0;
-    max-width: none;
   }
 }
 
