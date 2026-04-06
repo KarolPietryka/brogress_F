@@ -27,8 +27,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   const [draftLines, setDraftLines] = useState([]);
   const [exerciseMeta, setExerciseMeta] = useState(() => ({}));
   const [templateItems, setTemplateItems] = useState([]);
-  const [exercisesByGroup, setExercisesByGroup] = useState(() => ({}));
-  const [catalogError, setCatalogError] = useState("");
   const [templateLoadError, setTemplateLoadError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -49,29 +47,27 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     setTemplateLoadError("");
   }, [workoutClient]);
 
-  const loadExerciseCatalog = useCallback(async () => {
-    const catRes = await workoutClient.getExerciseCatalog();
-    if (!catRes.ok) {
-      const text = await catRes.text().catch(() => "");
-      throw new Error(text || `HTTP ${catRes.status}`);
+  const loadExercisePicker = useCallback(async (bodyPart) => {
+    const res = await workoutClient.getExercisePicker(bodyPart);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `HTTP ${res.status}`);
     }
-    const cat = await catRes.json();
-    setExercisesByGroup(cat && typeof cat === "object" ? cat : {});
-    setCatalogError("");
+    return res.json();
+  }, [workoutClient]);
+
+  const createUserExercise = useCallback(async (bodyPart, name) => {
+    const res = await workoutClient.postUserExercise({ bodyPart, name });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text || `HTTP ${res.status}`);
+    }
+    return res.json();
   }, [workoutClient]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
-        await loadExerciseCatalog();
-      } catch (e) {
-        if (!cancelled) {
-          setCatalogError(
-            `Nie udało się pobrać katalogu ćwiczeń (${e instanceof Error ? e.message : "unknown error"}).`
-          );
-        }
-      }
       try {
         await refreshWorkoutsFromServer();
       } catch (e) {
@@ -85,7 +81,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [loadExerciseCatalog, refreshWorkoutsFromServer]);
+  }, [refreshWorkoutsFromServer]);
 
   useEffect(() => {
     if (!graphShellOpen) return undefined;
@@ -179,6 +175,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
       const row = new WorkoutExercise();
       row.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
       row.name = line.name;
+      row.exerciseId = line.exerciseId != null ? line.exerciseId : null;
       row.weight = parseWeightIntOrNull(exerciseMeta[line.id]?.weight);
       row.reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
       row.status = line.status ?? "PLANNED";
@@ -261,8 +258,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
 
       {isOpen ? (
         <WorkoutModal
-          exercisesByGroup={exercisesByGroup}
-          catalogError={catalogError}
+          loadExercisePicker={loadExercisePicker}
+          createUserExercise={createUserExercise}
           draftLines={draftLines}
           setDraftLines={setDraftLines}
           exerciseMeta={exerciseMeta}

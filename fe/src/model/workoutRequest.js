@@ -3,6 +3,8 @@ export class WorkoutExercise {
   bodyPartName = "";
   name = "";
   /** @type {number | null} */
+  exerciseId = null;
+  /** @type {number | null} */
   weight = null;
   /** @type {number | null} */
   reps = null;

@@ -26,6 +26,7 @@ export function lastPlannedComposerPrefill(draftLines, exerciseMeta) {
     plannedRowId: "",
     group: null,
     name: null,
+    exerciseId: null,
     weight: "0",
     reps: "",
   };
@@ -40,6 +41,7 @@ export function lastPlannedComposerPrefill(draftLines, exerciseMeta) {
       plannedRowId: line.id,
       group: line.group,
       name: line.name,
+      exerciseId: line.exerciseId != null ? line.exerciseId : null,
       weight: w,
       reps: r,
     };
@@ -67,6 +69,7 @@ function exerciseToRow(group, e) {
     orderId: e.orderId ?? 0,
     group,
     name: e.name,
+    exerciseId: e.exerciseId != null ? e.exerciseId : undefined,
     weight: weightStr,
     reps: repsStr,
     status: normalizeExerciseStatus(e),
@@ -107,7 +110,13 @@ export function mapPrefillToDraft(prefill) {
   for (const ex of sorted) {
     const group = BODY_PART_TO_GROUP_LABEL[ex.bodyPartName] || ex.bodyPartName;
     const id = newDraftLineId();
-    draftLines.push({ id, group, name: ex.name, status: normalizeExerciseStatus(ex) });
+    draftLines.push({
+      id,
+      group,
+      name: ex.name,
+      exerciseId: ex.exerciseId != null ? ex.exerciseId : undefined,
+      status: normalizeExerciseStatus(ex),
+    });
     exerciseMeta[id] = {
       weight: prefillWeightField(ex.weight),
       reps: prefillNumberToDigitsField(ex.reps),
@@ -181,6 +190,7 @@ export function draftLinesOnlyStatusChanged(prev, next) {
     const a = prev[i];
     const b = next[i];
     if (a.id !== b.id || a.group !== b.group || a.name !== b.name) return false;
+    if (a.exerciseId !== b.exerciseId) return false;
   }
   return true;
 }

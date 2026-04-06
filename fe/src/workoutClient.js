@@ -39,9 +39,22 @@ export class WorkoutClient {
     }).then((r) => this.#withAuth(r));
   }
 
-  getExerciseCatalog() {
-    return fetch(`${WORKOUT_API_BASE}/workout/exercise-catalog`, {
+  /**
+   * GET /workout/exercises/picker?bodyPart= — { catalog: [{id,name}], custom: [{id,name}] }.
+   */
+  getExercisePicker(bodyPart) {
+    const q = encodeURIComponent(bodyPart);
+    return fetch(`${WORKOUT_API_BASE}/workout/exercises/picker?bodyPart=${q}`, {
       headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
+  }
+
+  /** POST /workout/exercises — body { bodyPart, name }; 201 { id, name }. */
+  postUserExercise(body) {
+    return fetch(`${WORKOUT_API_BASE}/workout/exercises`, {
+      method: "POST",
+      headers: this.#headers(true),
+      body: JSON.stringify(body),
     }).then((r) => this.#withAuth(r));
   }
 

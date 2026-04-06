@@ -83,21 +83,35 @@ export function ComposerPickListPortal({
         {sheet ? <div className="pickList-sheetGrip" aria-hidden="true" /> : null}
         <div className="pickList-header">{title}</div>
         <ul ref={listRef} className="pickList-list" role="listbox">
-          {items.map((item) => (
-            <li key={item} role="none">
-              <button
-                type="button"
-                className="pickList-item"
-                role="option"
-                onClick={() => {
-                  onPick(item);
-                  onClose();
-                }}
-              >
-                {item}
-              </button>
-            </li>
-          ))}
+          {items.map((item) => {
+            const normalized =
+              typeof item === "string"
+                ? { key: item, label: item, exerciseId: undefined, disabled: false }
+                : {
+                    key: item.key,
+                    label: item.label,
+                    exerciseId: item.exerciseId,
+                    disabled: Boolean(item.disabled),
+                  };
+            return (
+              <li key={normalized.key} role="none">
+                <button
+                  type="button"
+                  className="pickList-item"
+                  role="option"
+                  disabled={normalized.disabled}
+                  onClick={() => {
+                    if (normalized.disabled) return;
+                    const payload = typeof item === "string" ? item : normalized;
+                    onPick(payload);
+                    onClose();
+                  }}
+                >
+                  {normalized.label}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </div>
     </div>

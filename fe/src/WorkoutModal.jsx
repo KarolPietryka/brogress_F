@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ComposerPickListPortal } from "./ComposerPickList.jsx";
-import { MUSCLE_GROUPS } from "./workoutData.js";
+import { BODY_PART_API_NAME, MUSCLE_GROUPS } from "./workoutData.js";
 import {
   digits4,
   draftLinesOnlyStatusChanged,
@@ -15,8 +16,8 @@ import {
 } from "./workoutHelpers.js";
 
 export function WorkoutModal({
-  exercisesByGroup,
-  catalogError,
+  loadExercisePicker,
+  createUserExercise,
   draftLines,
   setDraftLines,
   exerciseMeta,
@@ -28,6 +29,15 @@ export function WorkoutModal({
 }) {
   const [composerGroup, setComposerGroup] = useState(() => MUSCLE_GROUPS[0] || "");
   const [composerExercise, setComposerExercise] = useState("");
+  const [composerExerciseId, setComposerExerciseId] = useState(null);
+  const [pickerCatalog, setPickerCatalog] = useState([]);
+  const [pickerCustom, setPickerCustom] = useState([]);
+  const [pickerReady, setPickerReady] = useState(false);
+  const [pickerLoadError, setPickerLoadError] = useState("");
+  const [addCustomOpen, setAddCustomOpen] = useState(false);
+  const [addCustomName, setAddCustomName] = useState("");
+  const [addCustomError, setAddCustomError] = useState("");
+  const [addCustomSubmitting, setAddCustomSubmitting] = useState(false);
   const [composerWeight, setComposerWeight] = useState("0");
   const [composerReps, setComposerReps] = useState("");
   /** Prototype: bottom sheet / popover pick list — "group" | "exercise" | null */
@@ -43,12 +53,58 @@ export function WorkoutModal({
   const prevDraftLinesForFlipRef = useRef(null);
   const modalBodyRef = useRef(null);
 
-  const composerExerciseOptions = exercisesByGroup[composerGroup] || [];
+  useEffect(() => {
+    let cancelled = false;
+    const apiPart = BODY_PART_API_NAME[composerGroup] || String(composerGroup).toLowerCase();
+    setPickerReady(false);
+    setPickerLoadError("");
+    loadExercisePicker(apiPart)
+      .then((data) => {
+        if (cancelled) return;
+        setPickerCatalog(Array.isArray(data?.catalog) ? data.catalog : []);
+        setPickerCustom(Array.isArray(data?.custom) ? data.custom : []);
+        setPickerReady(true);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setPickerCatalog([]);
+        setPickerCustom([]);
+        setPickerLoadError(e instanceof Error ? e.message : "picker error");
+        setPickerReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [composerGroup, loadExercisePicker]);
+
+  const composerPickItems = useMemo(() => {
+    const addNew = { key: "__add_custom__", label: "Dodaj własne…" };
+    if (!pickerReady) {
+      return [
+        { key: "__loading__", label: "Ładowanie…", disabled: true },
+        addNew,
+      ];
+    }
+    const c = (pickerCatalog || []).map((e) => ({
+      key: `c-${e.id}`,
+      label: e.name,
+      exerciseId: e.id,
+    }));
+    const u = (pickerCustom || []).map((e) => ({
+      key: `u-${e.id}`,
+      label: e.name,
+      exerciseId: e.id,
+    }));
+    if (c.length === 0 && u.length === 0) {
+      return [addNew];
+    }
+    return [...c, ...u, addNew];
+  }, [pickerReady, pickerCatalog, pickerCustom]);
 
   const composerPrefillKey = useMemo(() => {
     const ids = draftLines.map((l) => l.id).join("|");
     const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
-    return `${ids}|${p.plannedRowId}|${p.group ?? ""}|${p.name ?? ""}|${p.weight}|${p.reps}`;
+    return `${ids}|${p.plannedRowId}|${p.group ?? ""}|${p.name ?? ""}|${p.exerciseId ?? ""}|${p.weight}|${p.reps}`;
   }, [draftLines, exerciseMeta]);
 
   useLayoutEffect(() => {
@@ -58,17 +114,25 @@ export function WorkoutModal({
     if (p.plannedRowId) {
       setComposerGroup(p.group);
       setComposerExercise(p.name);
+      setComposerExerciseId(p.exerciseId != null ? p.exerciseId : null);
     } else if (draftLines.length === 0) {
       setComposerGroup(MUSCLE_GROUPS[0] || "");
       setComposerExercise("");
+      setComposerExerciseId(null);
     } else {
       setComposerExercise("");
+      setComposerExerciseId(null);
     }
   }, [composerPrefillKey, draftLines, exerciseMeta]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key !== "Escape") return;
+      if (addCustomOpen) {
+        e.preventDefault();
+        if (!addCustomSubmitting) setAddCustomOpen(false);
+        return;
+      }
       if (composerPickOpen) {
         e.preventDefault();
         setComposerPickOpen(null);
@@ -82,7 +146,7 @@ export function WorkoutModal({
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [onClose, composerPickOpen]);
+  }, [onClose, composerPickOpen, addCustomOpen, addCustomSubmitting]);
 
   useEffect(() => {
     const el = modalBodyRef.current;
@@ -164,18 +228,52 @@ export function WorkoutModal({
     prevDraftLayoutRef.current = nextRects;
   }, [draftLines]);
 
+  async function submitAddCustom() {
+    const trimmed = addCustomName.trim();
+    if (!trimmed) {
+      setAddCustomError("Wpisz nazwę ćwiczenia.");
+      return;
+    }
+    setAddCustomSubmitting(true);
+    setAddCustomError("");
+    try {
+      const apiPart = BODY_PART_API_NAME[composerGroup] || String(composerGroup).toLowerCase();
+      const created = await createUserExercise(apiPart, trimmed);
+      setPickerCustom((prev) =>
+        [...prev.filter((x) => x.id !== created.id), created].sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        )
+      );
+      setComposerExercise(created.name);
+      setComposerExerciseId(created.id);
+      setAddCustomOpen(false);
+      setAddCustomName("");
+    } catch (e) {
+      setAddCustomError(e instanceof Error ? e.message : "Nie udało się zapisać.");
+    } finally {
+      setAddCustomSubmitting(false);
+    }
+  }
+
   function addExerciseFromComposer() {
     if (!composerGroup || !composerExercise) return;
     const id = newDraftLineId();
     setDraftLines((prev) => [
       ...prev,
-      { id, group: composerGroup, name: composerExercise, status: "PLANNED" },
+      {
+        id,
+        group: composerGroup,
+        name: composerExercise,
+        exerciseId: composerExerciseId != null ? composerExerciseId : undefined,
+        status: "PLANNED",
+      },
     ]);
     setExerciseMeta((prev) => ({
       ...prev,
       [id]: { weight: composerWeight || "0", reps: composerReps || "" },
     }));
     setComposerExercise("");
+    setComposerExerciseId(null);
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
@@ -239,20 +337,92 @@ export function WorkoutModal({
         onClose={() => setComposerPickOpen(null)}
         onPick={(g) => {
           setComposerGroup(g);
-          setComposerExercise((prev) => {
-            const nextList = exercisesByGroup[g] || [];
-            return nextList.includes(prev) ? prev : "";
-          });
+          setComposerExercise("");
+          setComposerExerciseId(null);
         }}
       />
       <ComposerPickListPortal
         open={composerPickOpen === "exercise"}
         title="Exercise"
-        items={composerExerciseOptions}
+        items={composerPickItems}
         anchorRef={exercisePickAnchorRef}
         onClose={() => setComposerPickOpen(null)}
-        onPick={(name) => setComposerExercise(name)}
+        onPick={(item) => {
+          if (typeof item === "string") {
+            setComposerExercise(item);
+            setComposerExerciseId(null);
+            return;
+          }
+          if (item.key === "__add_custom__") {
+            setAddCustomOpen(true);
+            setAddCustomName("");
+            setAddCustomError("");
+            return;
+          }
+          setComposerExercise(item.label);
+          setComposerExerciseId(item.exerciseId != null ? item.exerciseId : null);
+        }}
       />
+      {addCustomOpen
+        ? createPortal(
+            <div className="pickList-root" role="presentation">
+              <button
+                type="button"
+                className="pickList-backdrop"
+                aria-label="Zamknij"
+                disabled={addCustomSubmitting}
+                onClick={() => !addCustomSubmitting && setAddCustomOpen(false)}
+              />
+              <div
+                className="pickList-panel pickList-panel--sheet"
+                role="dialog"
+                aria-label="Własne ćwiczenie"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="pickList-sheetGrip" aria-hidden="true" />
+                <div className="pickList-header">Dodaj własne ćwiczenie</div>
+                <div className="pickList-list" style={{ padding: "12px 16px 16px" }}>
+                  {addCustomError ? <div className="errorText">{addCustomError}</div> : null}
+                  <input
+                    type="text"
+                    className="auth-input"
+                    style={{ width: "100%", marginBottom: 12, boxSizing: "border-box" }}
+                    placeholder="Np. wyciskanie na skosie"
+                    value={addCustomName}
+                    disabled={addCustomSubmitting}
+                    onChange={(e) => setAddCustomName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        submitAddCustom();
+                      }
+                    }}
+                    autoFocus
+                  />
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={addCustomSubmitting}
+                      onClick={() => setAddCustomOpen(false)}
+                    >
+                      Anuluj
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      disabled={addCustomSubmitting}
+                      onClick={() => submitAddCustom()}
+                    >
+                      {addCustomSubmitting ? "Zapis…" : "Zapisz"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       <div className="modal-backdrop" onClick={onClose} />
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
         <div className="modal-card">
@@ -273,7 +443,9 @@ export function WorkoutModal({
           </div>
 
           <div className="modal-body" ref={modalBodyRef}>
-            {catalogError ? <div className="errorText">{catalogError}</div> : null}
+            {pickerLoadError ? (
+              <div className="errorText">Lista ćwiczeń: {pickerLoadError} — możesz dodać własne („Dodaj własne…”).</div>
+            ) : null}
             <section className="groupSection" aria-label="Current workout">
               <div className="groupHeaderRow">
                 <div className="groupHeader">Your workout</div>
@@ -325,13 +497,13 @@ export function WorkoutModal({
                       aria-label="Exercise"
                       aria-haspopup="listbox"
                       aria-expanded={composerPickOpen === "exercise"}
-                      disabled={isSubmitting || composerExerciseOptions.length === 0}
+                      disabled={isSubmitting || composerPickItems.length === 0}
                       onClick={() =>
                         setComposerPickOpen((p) => (p === "exercise" ? null : "exercise"))
                       }
                     >
                       <span className="composerPickTrigger__text composerPickTrigger__text--ellipsis">
-                        {composerExerciseOptions.length === 0
+                        {composerPickItems.length === 0
                           ? "No exercises"
                           : composerExercise || "Exercise"}
                       </span>
