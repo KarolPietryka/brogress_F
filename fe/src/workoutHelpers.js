@@ -10,11 +10,37 @@ export function normalizeExerciseStatus(e) {
   return "DONE";
 }
 
-export function rowStatusModifier(status) {
-  const s = normalizeExerciseStatus({ status });
+/**
+ * CSS suffix for row styling. Pass a row-like object ({@code status}, optional legacy {@code planned}) or a bare status string.
+ */
+export function rowStatusModifier(statusOrRow) {
+  const s =
+    statusOrRow != null && typeof statusOrRow === "object" && !Array.isArray(statusOrRow)
+      ? normalizeExerciseStatus(statusOrRow)
+      : normalizeExerciseStatus({ status: statusOrRow });
   if (s === "PLANNED") return "planned";
   if (s === "NEXT") return "next";
   return "done";
+}
+
+/**
+ * Aligns draft with BE prefill semantics: first PLANNED/NEXT row in list order is NEXT; other plan rows PLANNED; DONE unchanged.
+ * Use after add/remove/reorder — not after per-row PLANNED↔NEXT toggle (user may target a non-head row).
+ */
+export function normalizeDraftPlanHeadNext(lines) {
+  if (!lines?.length) return lines;
+  const headIndex = lines.findIndex((line) => {
+    const s = normalizeExerciseStatus(line);
+    return s === "PLANNED" || s === "NEXT";
+  });
+  if (headIndex < 0) return lines;
+  return lines.map((line, i) => {
+    const s = normalizeExerciseStatus(line);
+    if (s === "DONE") return line;
+    const wantNext = i === headIndex;
+    if (wantNext) return s === "NEXT" ? line : { ...line, status: "NEXT" };
+    return s === "PLANNED" ? line : { ...line, status: "PLANNED" };
+  });
 }
 
 /**

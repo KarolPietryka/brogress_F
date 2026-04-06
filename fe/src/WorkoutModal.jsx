@@ -7,6 +7,7 @@ import {
   draftLinesOnlyStatusChanged,
   lastPlannedComposerPrefill,
   newDraftLineId,
+  normalizeDraftPlanHeadNext,
   normalizeExerciseStatus,
   reorderDraftIndices,
   rowStatusModifier,
@@ -111,20 +112,23 @@ export function WorkoutModal({
 
   useLayoutEffect(() => {
     const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
-    setComposerWeight(p.weight);
-    setComposerReps(p.reps);
     if (p.plannedRowId) {
+      setComposerWeight(p.weight);
+      setComposerReps(p.reps);
       setComposerGroup(p.group);
       setComposerExercise(p.name);
       setComposerExerciseId(p.exerciseId != null ? p.exerciseId : null);
-    } else if (draftLines.length === 0) {
+      return;
+    }
+    if (draftLines.length === 0) {
+      setComposerWeight(p.weight);
+      setComposerReps(p.reps);
       setComposerGroup(MUSCLE_GROUPS[0] || "");
       setComposerExercise("");
       setComposerExerciseId(null);
-    } else {
-      setComposerExercise("");
-      setComposerExerciseId(null);
+      return;
     }
+    // Has draft rows but no PLANNED line (e.g. only NEXT after add): keep sticky composer as-is.
   }, [composerPrefillKey, draftLines, exerciseMeta]);
 
   useEffect(() => {
@@ -260,22 +264,22 @@ export function WorkoutModal({
   function addExerciseFromComposer() {
     if (!composerGroup || !composerExercise) return;
     const id = newDraftLineId();
-    setDraftLines((prev) => [
-      ...prev,
-      {
-        id,
-        group: composerGroup,
-        name: composerExercise,
-        exerciseId: composerExerciseId != null ? composerExerciseId : undefined,
-        status: "PLANNED",
-      },
-    ]);
+    setDraftLines((prev) =>
+      normalizeDraftPlanHeadNext([
+        ...prev,
+        {
+          id,
+          group: composerGroup,
+          name: composerExercise,
+          exerciseId: composerExerciseId != null ? composerExerciseId : undefined,
+          status: "PLANNED",
+        },
+      ])
+    );
     setExerciseMeta((prev) => ({
       ...prev,
       [id]: { weight: composerWeight || "0", reps: composerReps || "" },
     }));
-    setComposerExercise("");
-    setComposerExerciseId(null);
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
@@ -288,7 +292,7 @@ export function WorkoutModal({
   }
 
   function removeDraftLine(lineId) {
-    setDraftLines((prev) => prev.filter((l) => l.id !== lineId));
+    setDraftLines((prev) => normalizeDraftPlanHeadNext(prev.filter((l) => l.id !== lineId)));
     setExerciseMeta((prev) => {
       const next = { ...prev };
       delete next[lineId];
@@ -304,15 +308,7 @@ export function WorkoutModal({
   }
 
   function moveDraftLine(fromIndex, toIndex) {
-    setDraftLines((prev) => reorderDraftIndices(prev, fromIndex, toIndex));
-  }
-
-  /** HTML5 drag source is the row; PLANNED/NEXT may only start from the grip so row click still toggles status. */
-  function shouldStartDraftRowDrag(e, canTogglePlanStatus) {
-    const t = e.target;
-    if (t.closest?.(".exerciseFields") || t.closest?.(".rowRemove")) return false;
-    if (t.closest?.(".dragHandle")) return true;
-    return !canTogglePlanStatus;
+    setDraftLines((prev) => normalizeDraftPlanHeadNext(reorderDraftIndices(prev, fromIndex, toIndex)));
   }
 
   /** PLANNED ↔ NEXT so several rows can be submitted as performed in one Add (BE stores NEXT as DONE). */
@@ -568,13 +564,13 @@ export function WorkoutModal({
                     return (
                       <div
                         data-draft-row-id={line.id}
-                        className={`exerciseRow exerciseRow--${rowStatusModifier(line.status)}${
+                        className={`exerciseRow exerciseRow--${rowStatusModifier(line)}${
                           draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
                         }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}${
                           canTogglePlanStatus ? " exerciseRow--planClickable" : ""
                         }`}
                         key={line.id}
-                        draggable={!isSubmitting}
+                        draggable={false}
                         tabIndex={canTogglePlanStatus && !isSubmitting ? 0 : undefined}
                         aria-label={
                           canTogglePlanStatus
@@ -596,20 +592,6 @@ export function WorkoutModal({
                               }
                             : undefined
                         }
-                        onDragStart={(e) => {
-                          if (isSubmitting || !shouldStartDraftRowDrag(e, canTogglePlanStatus)) {
-                            e.preventDefault();
-                            return;
-                          }
-                          setDraftDraggingIndex(index);
-                          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
-                          e.dataTransfer.setData("text/plain", String(index));
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragEnd={() => {
-                          setDraftDragOverIndex(null);
-                          setDraftDraggingIndex(null);
-                        }}
                         onDragOver={(e) => {
                           if (isSubmitting) return;
                           e.preventDefault();
@@ -632,7 +614,24 @@ export function WorkoutModal({
                         className="dragHandle"
                         title="Przeciągnij, aby zmienić kolejność"
                         aria-label={`Zmień kolejność: ${line.name}`}
+                        draggable={!isSubmitting}
                         onClick={(e) => e.stopPropagation()}
+                        onDragStart={(e) => {
+                          if (isSubmitting) {
+                            e.preventDefault();
+                            return;
+                          }
+                          e.stopPropagation();
+                          setDraftDraggingIndex(index);
+                          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
+                          e.dataTransfer.setData("text/plain", String(index));
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={(e) => {
+                          e.stopPropagation();
+                          setDraftDragOverIndex(null);
+                          setDraftDraggingIndex(null);
+                        }}
                       >
                         <span className="dragHandleGrip" aria-hidden="true" />
                       </div>

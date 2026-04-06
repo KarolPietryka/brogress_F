@@ -705,15 +705,6 @@ body {
   background: rgba(70, 180, 130, 0.12);
 }
 
-/* DONE rows: drag starts from grip or name strip (see WorkoutModal shouldStartDraftRowDrag). */
-.exerciseRow--done .exerciseNameCell {
-  cursor: grab;
-}
-
-.exerciseRow--done.exerciseRow--dragging .exerciseNameCell {
-  cursor: grabbing;
-}
-
 .exerciseRow--planned {
   border-style: dashed;
   border-color: rgba(255, 207, 90, 0.38);

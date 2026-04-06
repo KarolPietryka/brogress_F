@@ -25,7 +25,7 @@ function useSummaryGridColumns() {
 
 function WorkoutRowTile({ row }) {
   return (
-    <div className={`workoutRow workoutRow--${rowStatusModifier(row.status)}`}>
+    <div className={`workoutRow workoutRow--${rowStatusModifier(row)}`}>
       <span className="workoutRowGroup">{row.group}</span>
       <span className="workoutRowName">{row.name}</span>
       <span className="workoutRowStats" aria-label="Weight and reps">
