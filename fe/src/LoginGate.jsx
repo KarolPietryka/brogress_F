@@ -58,7 +58,15 @@ export function LoginGate({ nick, onLoggedIn }) {
               Nick from URL: <strong>{nick || "—"}</strong>
             </p>
           </div>
-          <div className="auth-form">
+          <form
+            className="auth-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (busy || !password) return;
+              if (mode === "register") void submitRegister();
+              else void submitLogin();
+            }}
+          >
             <label className="auth-label">
               Password
               <input
@@ -85,12 +93,7 @@ export function LoginGate({ nick, onLoggedIn }) {
             </p>
             {error ? <div className="errorText">{error}</div> : null}
             <div className="auth-actions">
-              <button
-                className="btn primary"
-                type="button"
-                disabled={busy || !password}
-                onClick={mode === "register" ? submitRegister : submitLogin}
-              >
+              <button className="btn primary" type="submit" disabled={busy || !password}>
                 {busy ? "…" : mode === "register" ? "Create account" : "Log in"}
               </button>
             </div>
@@ -105,7 +108,7 @@ export function LoginGate({ nick, onLoggedIn }) {
             >
               {mode === "login" ? "First time? Create an account" : "I have an account — log in"}
             </button>
-          </div>
+          </form>
         </div>
       </section>
     </main>

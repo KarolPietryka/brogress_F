@@ -463,11 +463,16 @@ export function WorkoutModal({
               </div>
 
               <div className="workoutComposerBlock">
-                <div
+                <form
                   className={`exerciseRow exerciseRow--composer${
                     composerRowFlash ? " exerciseRow--composerFlash" : ""
                   }`}
                   aria-label="Add new exercise"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (isSubmitting || !composerExercise) return;
+                    addExerciseFromComposer();
+                  }}
                   onAnimationEnd={(e) => {
                     if (e.target !== e.currentTarget) return;
                     if (!e.animationName.includes("composerRowBlueFlash")) return;
@@ -532,15 +537,14 @@ export function WorkoutModal({
                     />
                   </div>
                   <button
-                    type="button"
+                    type="submit"
                     className="rowAdd"
                     disabled={isSubmitting || !composerExercise}
                     aria-label="Add exercise to list"
-                    onClick={addExerciseFromComposer}
                   >
                     +
                   </button>
-                </div>
+                </form>
               </div>
 
               {draftLines.length > 0 ? (
