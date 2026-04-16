@@ -7,6 +7,7 @@ import {
   readAuthFromStorage,
   saveAuthToStorage,
 } from "./authStorage.js";
+import { identifyPosthogUser, resetPosthogSession } from "./posthogIdentity.js";
 
 export function UserAppShell() {
   const { nick: nickParam } = useParams();
@@ -19,7 +20,11 @@ export function UserAppShell() {
     const stored = readAuthFromStorage();
     if (stored && stored.nick.toLowerCase() === decodedNick.toLowerCase()) {
       setToken(stored.token);
+      identifyPosthogUser(stored.nick);
     } else {
+      if (stored) {
+        resetPosthogSession();
+      }
       clearAuthFromStorage();
       setToken(null);
     }
@@ -30,6 +35,7 @@ export function UserAppShell() {
     (t, canonicalNick) => {
       saveAuthToStorage(t, canonicalNick);
       setToken(t);
+      identifyPosthogUser(canonicalNick);
       if (canonicalNick.toLowerCase() !== decodedNick.toLowerCase()) {
         navigate(`/u/${encodeURIComponent(canonicalNick)}`, { replace: true });
       }
@@ -38,6 +44,7 @@ export function UserAppShell() {
   );
 
   const clearAuth = useCallback(() => {
+    resetPosthogSession();
     clearAuthFromStorage();
     setToken(null);
   }, []);

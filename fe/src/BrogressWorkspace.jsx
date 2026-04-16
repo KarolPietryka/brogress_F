@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import posthog from "posthog-js";
 import { WorkoutClient, WORKOUT_API_BASE } from "./workoutClient.js";
 import { BODY_PART_API_NAME } from "./workoutData.js";
 import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
@@ -255,7 +256,18 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
             type="button"
             aria-pressed={graphShellOpen}
             aria-label={graphShellOpen ? "Back to workout list" : "Show current series chart"}
-            onClick={() => setGraphShellOpen((v) => !v)}
+            onClick={() =>
+              setGraphShellOpen((v) => {
+                const next = !v;
+                // Session replay often replays SVG charts (Recharts) poorly; this event marks the toggle in PostHog.
+                if (import.meta.env.VITE_POSTHOG_KEY) {
+                  posthog.capture("brogress_shell_view", {
+                    view: next ? "graph_series" : "workout_list",
+                  });
+                }
+                return next;
+              })
+            }
           >
             Your Brogress
           </button>
