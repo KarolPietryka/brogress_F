@@ -2,10 +2,12 @@ import {
   BODY_PART_TO_GROUP_LABEL,
 } from "./workoutData.js";
 
-/** BE: {@code status} DONE | PLANNED | NEXT; legacy {@code planned}. */
+/** BE status: DONE | PLANNED. Legacy values (NEXT from old clients, {@code planned} boolean) are coerced. */
 export function normalizeExerciseStatus(e) {
   const s = e?.status;
-  if (s === "PLANNED" || s === "NEXT" || s === "DONE") return s;
+  if (s === "DONE") return "DONE";
+  if (s === "PLANNED") return "PLANNED";
+  if (s === "NEXT") return "PLANNED";
   if (e?.planned === true) return "PLANNED";
   return "DONE";
 }
@@ -19,28 +21,114 @@ export function rowStatusModifier(statusOrRow) {
       ? normalizeExerciseStatus(statusOrRow)
       : normalizeExerciseStatus({ status: statusOrRow });
   if (s === "PLANNED") return "planned";
-  if (s === "NEXT") return "next";
   return "done";
 }
 
 /**
- * Aligns draft with BE prefill semantics: first PLANNED/NEXT row in list order is NEXT; other plan rows PLANNED; DONE unchanged.
- * Use after add/remove/reorder — not after per-row PLANNED↔NEXT toggle (user may target a non-head row).
+ * Progress-bar position = number of leading DONE rows in the draft.
+ * Invariant in the new model: DONE rows come first, PLANNED rows after — bar sits at the boundary.
  */
-export function normalizeDraftPlanHeadNext(lines) {
+export function computeBarIndex(lines) {
+  if (!lines?.length) return 0;
+  let i = 0;
+  while (i < lines.length && normalizeExerciseStatus(lines[i]) === "DONE") i++;
+  return i;
+}
+
+/**
+ * Applies a new bar position: first {@code barIndex} rows become DONE, the rest PLANNED.
+ * Preserves row identity and per-row meta — only {@code status} may change.
+ */
+export function applyBarIndex(lines, barIndex) {
   if (!lines?.length) return lines;
-  const headIndex = lines.findIndex((line) => {
-    const s = normalizeExerciseStatus(line);
-    return s === "PLANNED" || s === "NEXT";
+  const clamped = Math.max(0, Math.min(barIndex, lines.length));
+  let changed = false;
+  const next = lines.map((line, i) => {
+    const want = i < clamped ? "DONE" : "PLANNED";
+    const current = normalizeExerciseStatus(line);
+    if (current === want && line.status === want) return line;
+    changed = true;
+    return { ...line, status: want };
   });
-  if (headIndex < 0) return lines;
-  return lines.map((line, i) => {
-    const s = normalizeExerciseStatus(line);
-    if (s === "DONE") return line;
-    const wantNext = i === headIndex;
-    if (wantNext) return s === "NEXT" ? line : { ...line, status: "NEXT" };
-    return s === "PLANNED" ? line : { ...line, status: "PLANNED" };
-  });
+  return changed ? next : lines;
+}
+
+/**
+ * Drop-above rule: dragging any row onto a target row places it DIRECTLY above that target.
+ * The moved row inherits the target's status (DONE/PLANNED) — that is what "above target" means
+ * visually: it sits on the target's side of the progress bar. Invariant "DONEs first" is preserved
+ * as long as the caller honors the bar model.
+ *
+ * @param {Array} lines current draft rows.
+ * @param {number} fromIndex source row index.
+ * @param {number} targetIndex row index to land above.
+ * @returns {{ lines: Array, changed: boolean }}
+ */
+export function moveDraftExerciseAbove(lines, fromIndex, targetIndex) {
+  if (!Array.isArray(lines) || lines.length === 0) return { lines, changed: false };
+  if (fromIndex < 0 || fromIndex >= lines.length) return { lines, changed: false };
+  if (targetIndex < 0 || targetIndex >= lines.length) return { lines, changed: false };
+  // Same row, or source already sits directly above target → nothing to move.
+  if (fromIndex === targetIndex) return { lines, changed: false };
+  if (fromIndex + 1 === targetIndex) return { lines, changed: false };
+
+  // Compute insertion slot after removal: everything past fromIndex shifts left by one.
+  const item = lines[fromIndex];
+  const targetStatus = normalizeExerciseStatus(lines[targetIndex]);
+  const withoutItem = lines.filter((_, i) => i !== fromIndex);
+  const insertAt = fromIndex < targetIndex ? targetIndex - 1 : targetIndex;
+
+  const moved = { ...item, status: targetStatus };
+  const reordered = [
+    ...withoutItem.slice(0, insertAt),
+    moved,
+    ...withoutItem.slice(insertAt),
+  ];
+  return { lines: reordered, changed: true };
+}
+
+/**
+ * Drop-above rule applied to the progress bar: the dragged row lands ABOVE the bar — i.e. becomes
+ * the last DONE row. Bar position is then re-derived from statuses.
+ */
+export function moveDraftExerciseAboveBar(lines, fromIndex) {
+  if (!Array.isArray(lines) || lines.length === 0) return { lines, changed: false };
+  if (fromIndex < 0 || fromIndex >= lines.length) return { lines, changed: false };
+
+  const barBefore = computeBarIndex(lines);
+  // Item is already the last DONE → dropping on the bar changes nothing.
+  if (fromIndex < barBefore && fromIndex + 1 === barBefore) return { lines, changed: false };
+
+  const item = lines[fromIndex];
+  const withoutItem = lines.filter((_, i) => i !== fromIndex);
+  const insertAt = fromIndex < barBefore ? barBefore - 1 : barBefore;
+
+  const moved = { ...item, status: "DONE" };
+  const reordered = [
+    ...withoutItem.slice(0, insertAt),
+    moved,
+    ...withoutItem.slice(insertAt),
+  ];
+  return { lines: reordered, changed: true };
+}
+
+/**
+ * Tail drop zone (no concrete target row) → append at the very end. Status matches the current tail
+ * so the "DONEs first" invariant survives (empty tail falls back to the item's own status).
+ */
+export function appendDraftExerciseToEnd(lines, fromIndex) {
+  if (!Array.isArray(lines) || lines.length === 0) return { lines, changed: false };
+  if (fromIndex < 0 || fromIndex >= lines.length) return { lines, changed: false };
+  if (fromIndex === lines.length - 1) return { lines, changed: false };
+
+  const item = lines[fromIndex];
+  const withoutItem = lines.filter((_, i) => i !== fromIndex);
+  const tailStatus =
+    withoutItem.length > 0
+      ? normalizeExerciseStatus(withoutItem[withoutItem.length - 1])
+      : normalizeExerciseStatus(item);
+  const moved = { ...item, status: tailStatus };
+  return { lines: [...withoutItem, moved], changed: true };
 }
 
 /**
@@ -232,6 +320,7 @@ export function newDraftLineId() {
 }
 
 export const DRAFT_DND_TYPE = "application/x-brogress-draft-index";
+export const BAR_DND_TYPE = "application/x-brogress-bar-drag";
 
 export const DRAFT_FLIP_MS = 320;
 export const DRAFT_FLIP_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
@@ -249,22 +338,4 @@ export function draftLinesOnlyStatusChanged(prev, next) {
     if (a.exerciseId !== b.exerciseId) return false;
   }
   return true;
-}
-
-/** Reorder so the item at {@code fromIndex} ends up immediately before the row that was at {@code toIndex} (drop target). */
-export function reorderDraftIndices(lines, fromIndex, toIndex) {
-  if (
-    fromIndex === toIndex ||
-    fromIndex < 0 ||
-    toIndex < 0 ||
-    fromIndex >= lines.length ||
-    toIndex >= lines.length
-  ) {
-    return lines;
-  }
-  const next = [...lines];
-  const [item] = next.splice(fromIndex, 1);
-  const insertAt = fromIndex < toIndex ? toIndex - 1 : toIndex;
-  next.splice(insertAt, 0, item);
-  return next;
 }

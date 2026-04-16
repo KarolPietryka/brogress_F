@@ -82,7 +82,7 @@ export class WorkoutClient {
   }
 
   /**
-   * GET /workout/prefill — flat `bodyPart[]` rows with `bodyPartName` on each; `status` PLANNED | NEXT | DONE.
+   * GET /workout/prefill — flat `bodyPart[]` rows with `bodyPartName` on each; `status` PLANNED | DONE.
    */
   prefillWorkout() {
     return fetch(`${WORKOUT_API_BASE}/workout/prefill`, {

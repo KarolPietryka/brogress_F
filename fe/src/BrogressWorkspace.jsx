@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import posthog from "posthog-js";
-import { WorkoutClient, WORKOUT_API_BASE } from "./workoutClient.js";
+import { WorkoutClient } from "./workoutClient.js";
 import { BODY_PART_API_NAME } from "./workoutData.js";
 import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 import {
@@ -26,6 +26,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   );
 
   const openModalInFlight = useRef(false);
+  /** Flips to true on the first successful drop-induced PUT so {@link closeModal} knows to refresh the summary list. */
+  const draftDirtyRef = useRef(false);
   /** When set, modal submit calls PUT /workout/{id} instead of POST /workout (today). */
   const [editingWorkout, setEditingWorkout] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -120,8 +122,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     };
   }, [graphShellOpen, graphReloadTrigger, workoutClient]);
 
-  const canSend = useMemo(() => draftLines.length > 0, [draftLines]);
-
   async function openModal() {
     if (openModalInFlight.current) return;
     openModalInFlight.current = true;
@@ -152,6 +152,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     if (openModalInFlight.current) return;
     setIsSubmitting(false);
     setSubmitError("");
+    // Fresh edit session → clear any previous "dirty" flag so opening-and-closing without drops won't refetch.
+    draftDirtyRef.current = false;
     const { draftLines: d, exerciseMeta: m } = mapSummaryItemToDraft(mappedItem);
     setDraftLines(d);
     setExerciseMeta(m);
@@ -163,78 +165,105 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }
 
   function closeModal() {
+    // Remember intent before clearing state: if any drop persisted, summary list is stale and must reload.
+    const shouldRefreshSummary = draftDirtyRef.current;
+    draftDirtyRef.current = false;
     setIsOpen(false);
     setIsSubmitting(false);
     setSubmitError("");
     setEditingWorkout(null);
+    if (shouldRefreshSummary) {
+      // Fire-and-forget; a transient fetch error surfaces via templateLoadError without blocking close.
+      refreshWorkoutsFromServer().catch((e) => {
+        setTemplateLoadError(
+          `Zmiany zapisane, ale lista nie odświeżyła się (${e instanceof Error ? e.message : "unknown error"}).`
+        );
+      });
+      if (graphShellOpen) {
+        setGraphReloadTrigger((v) => v + 1);
+      }
+    }
   }
 
-  async function addWorkoutToTemplate() {
-    if (!canSend) {
-      setSubmitError("Add at least one exercise to the workout below.");
-      return;
-    }
-
-    for (const line of draftLines) {
-      const reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
-      const weight = parseWeightIntOrNull(exerciseMeta[line.id]?.weight);
-      if (reps == null) {
-        setSubmitError("Fill in Reps for every exercise in your workout.");
-        return;
-      }
-      if (weight === null) {
-        setSubmitError("Invalid weight for an exercise in your workout.");
-        return;
-      }
-    }
-
-    setIsSubmitting(true);
-    setSubmitError("");
-
+  /**
+   * Builds a {@link WorkoutSubmitRequest} from the given draft lines.
+   *
+   * The optional {@code metaOverride} lets callers that just mutated state (add/remove) hand in the
+   * freshly computed meta map — otherwise we'd read a stale closure here and lose the new row's
+   * weight/reps on the first autosave request.
+   */
+  function buildSubmitRequestFromLines(lines, metaOverride) {
+    const meta = metaOverride || exerciseMeta;
     const request = new WorkoutSubmitRequest();
-    request.exercises = draftLines.map((line) => {
+    request.exercises = lines.map((line) => {
       const row = new WorkoutExercise();
       row.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
       row.name = line.name;
       row.exerciseId = line.exerciseId != null ? line.exerciseId : null;
-      row.weight = parseWeightIntOrNull(exerciseMeta[line.id]?.weight);
-      row.reps = parseIntOrNull(exerciseMeta[line.id]?.reps || "");
+      row.weight = parseWeightIntOrNull(meta[line.id]?.weight);
+      row.reps = parseIntOrNull(meta[line.id]?.reps || "");
       row.status = line.status ?? "PLANNED";
       return row;
     });
-
-    console.info("POST /workout payload", request);
-
-    try {
-      const res = editingWorkout
-        ? await workoutClient.putWorkout(editingWorkout.id, request)
-        : await workoutClient.postWorkouts(request);
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `HTTP ${res.status}`);
-      }
-
-      closeModal();
-      try {
-        await refreshWorkoutsFromServer();
-      } catch (e2) {
-        setTemplateLoadError(
-          `Trening zapisany, ale lista nie odświeżyła się (${e2 instanceof Error ? e2.message : "unknown error"}).`
-        );
-      }
-      if (graphShellOpen) {
-        setGraphReloadTrigger((v) => v + 1);
-      }
-    } catch (e) {
-      setSubmitError(
-        editingWorkout
-          ? `Failed to save workout (${e instanceof Error ? e.message : "unknown error"})`
-          : `Failed to POST to ${WORKOUT_API_BASE}/workout (${e instanceof Error ? e.message : "unknown error"})`
-      );
-      setIsSubmitting(false);
-    }
+    return request;
   }
+
+  /**
+   * Autosave: every structural change inside the modal (drop, add, remove) snapshots the workout to the server.
+   *
+   * Mode routing:
+   *   - edit mode  (editingWorkout set) → PUT /workout/{id}
+   *   - compose mode (no editingWorkout) → POST /workout on the first call, then transition to edit mode
+   *     using the returned id so subsequent calls become PUTs instead of repeatedly replacing today's rows.
+   *
+   * Persists are best-effort snapshots (no reps/weight validation) — kept that way so interim states don't
+   * block the UI. Surface failures via {@link submitError} without rolling back local state.
+   */
+  const persistDraftAfterDrop = useCallback(
+    (nextLines, nextMeta) => {
+      if (!Array.isArray(nextLines)) return;
+      // Empty draft → nothing to create, and wiping an existing workout is out of scope of autosave.
+      if (nextLines.length === 0) return;
+
+      const request = buildSubmitRequestFromLines(nextLines, nextMeta);
+
+      // Fire-and-forget on purpose — don't block the UI; surface errors via a non-blocking state update.
+      (async () => {
+        try {
+          const res = editingWorkout
+            ? await workoutClient.putWorkout(editingWorkout.id, request)
+            : await workoutClient.postWorkouts(request);
+          if (!res.ok) {
+            const text = await res.text().catch(() => "");
+            throw new Error(text || `HTTP ${res.status}`);
+          }
+
+          // Compose → edit transition: pick up the created workout's id so the next autosave PUTs instead
+          // of POSTing again (BE would otherwise delete+replace today's sets on each call).
+          if (!editingWorkout) {
+            const created = await res.json().catch(() => null);
+            if (created?.id != null) {
+              setEditingWorkout({
+                id: created.id,
+                dateLabel: formatWorkoutDate(created.workoutDate),
+              });
+            }
+          }
+
+          // Mark the session as dirty so closing the modal triggers a summary-list refresh.
+          draftDirtyRef.current = true;
+          setSubmitError("");
+        } catch (e) {
+          setSubmitError(
+            `Nie udało się zapisać zmian (${e instanceof Error ? e.message : "unknown error"}).`
+          );
+        }
+      })();
+    },
+    // buildSubmitRequestFromLines is closed over exerciseMeta/editingWorkout — list both so stale closures don't slip in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editingWorkout, workoutClient, exerciseMeta]
+  );
 
   return (
     <main className="app">
@@ -304,7 +333,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           isSubmitting={isSubmitting}
           submitError={submitError}
           onClose={closeModal}
-          onSubmit={addWorkoutToTemplate}
+          onDraftPersist={persistDraftAfterDrop}
           modalKicker={editingWorkout ? "Edit workout" : "Add workout"}
           modalKickerDetail={editingWorkout?.dateLabel ?? ""}
         />

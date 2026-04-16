@@ -3,19 +3,30 @@ import { createPortal } from "react-dom";
 import { ComposerPickListPortal } from "./ComposerPickList.jsx";
 import { BODY_PART_API_NAME, MUSCLE_GROUPS } from "./workoutData.js";
 import {
+  appendDraftExerciseToEnd,
+  applyBarIndex,
+  computeBarIndex,
   digits4,
-  draftLinesOnlyStatusChanged,
   lastPlannedComposerPrefill,
+  moveDraftExerciseAbove,
+  moveDraftExerciseAboveBar,
   newDraftLineId,
-  normalizeDraftPlanHeadNext,
   normalizeExerciseStatus,
-  reorderDraftIndices,
   rowStatusModifier,
+  BAR_DND_TYPE,
   DRAFT_DND_TYPE,
   DRAFT_FLIP_MS,
   DRAFT_FLIP_EASING,
 } from "./workoutHelpers.js";
 
+/**
+ * Workout composer / editor. Progress-bar model:
+ * - {@code draftLines} keeps invariant "DONE rows first, PLANNED rows after"; the bar sits at that boundary.
+ * - {@code barIndex} is derived from the draft (count of leading DONE rows), not a separate state.
+ * - Two drag interactions: drag the bar to redraw the boundary, or drag an exercise across the bar to flip its status.
+ *
+ * Parent can pass {@link onDraftPersist} to fire {@code PUT /workout/{id}} on every drop while editing an existing session.
+ */
 export function WorkoutModal({
   loadExercisePicker,
   createUserExercise,
@@ -26,7 +37,7 @@ export function WorkoutModal({
   isSubmitting,
   submitError,
   onClose,
-  onSubmit,
+  onDraftPersist,
   modalKicker = "Add workout",
   modalKickerDetail = "",
 }) {
@@ -49,12 +60,26 @@ export function WorkoutModal({
   const [composerRowFlash, setComposerRowFlash] = useState(false);
   const groupPickAnchorRef = useRef(null);
   const exercisePickAnchorRef = useRef(null);
-  const [draftDragOverIndex, setDraftDragOverIndex] = useState(null);
-  const [draftDraggingIndex, setDraftDraggingIndex] = useState(null);
+  /**
+   * Active DnD descriptor:
+   *   {kind: "exercise", fromIndex}   — dragging an exercise row
+   *   {kind: "bar"}                   — dragging the progress bar
+   *   null                             — no drag in progress
+   */
+  const [dragState, setDragState] = useState(null);
+  /**
+   * Highlighted drop target while dragging. {@code kind} matches the hovered slot type:
+   *   {kind: "row", index}     — row at exercise array index
+   *   {kind: "bar"}            — the progress bar row
+   *   {kind: "end"}            — tail drop zone below the last row
+   */
+  const [dropTarget, setDropTarget] = useState(null);
   const draftFlipContainerRef = useRef(null);
   const prevDraftLayoutRef = useRef(new Map());
   const prevDraftLinesForFlipRef = useRef(null);
   const modalBodyRef = useRef(null);
+
+  const barIndex = useMemo(() => computeBarIndex(draftLines), [draftLines]);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +153,7 @@ export function WorkoutModal({
       setComposerExerciseId(null);
       return;
     }
-    // Has draft rows but no PLANNED line (e.g. only NEXT after add): keep sticky composer as-is.
+    // All rows are DONE (bar at the bottom): keep sticky composer as-is so the user doesn't lose last picks.
   }, [composerPrefillKey, draftLines, exerciseMeta]);
 
   useEffect(() => {
@@ -172,21 +197,16 @@ export function WorkoutModal({
       return;
     }
 
-    const prevLines = prevDraftLinesForFlipRef.current;
-    const statusOnly =
-      prevLines != null && draftLinesOnlyStatusChanged(prevLines, draftLines);
     prevDraftLinesForFlipRef.current = draftLines;
 
+    // Progress bar carries `data-draft-row-id="__bar__"`, so it participates in the same FLIP pass
+    // as exercise rows. Status-only transitions (drag-bar moves) still shift the bar across rows and
+    // therefore must be animated; rows that don't physically move are filtered by the < 0.5 px check.
     const rowEls = container.querySelectorAll("[data-draft-row-id]");
     const nextRects = new Map();
     for (const el of rowEls) {
       const id = el.getAttribute("data-draft-row-id");
       if (id) nextRects.set(id, el.getBoundingClientRect());
-    }
-
-    if (statusOnly) {
-      prevDraftLayoutRef.current = nextRects;
-      return;
     }
 
     const prev = prevDraftLayoutRef.current;
@@ -264,22 +284,26 @@ export function WorkoutModal({
   function addExerciseFromComposer() {
     if (!composerGroup || !composerExercise) return;
     const id = newDraftLineId();
-    setDraftLines((prev) =>
-      normalizeDraftPlanHeadNext([
-        ...prev,
-        {
-          id,
-          group: composerGroup,
-          name: composerExercise,
-          exerciseId: composerExerciseId != null ? composerExerciseId : undefined,
-          status: "PLANNED",
-        },
-      ])
-    );
-    setExerciseMeta((prev) => ({
-      ...prev,
+    const newLine = {
+      id,
+      group: composerGroup,
+      name: composerExercise,
+      exerciseId: composerExerciseId != null ? composerExerciseId : undefined,
+      status: "PLANNED",
+    };
+    // New rows always land below the bar (planned). Appending a PLANNED row keeps the "DONEs first" invariant.
+    const nextLines = [...draftLines, newLine];
+    const nextMeta = {
+      ...exerciseMeta,
       [id]: { weight: composerWeight || "0", reps: composerReps || "" },
-    }));
+    };
+    setDraftLines(nextLines);
+    setExerciseMeta(nextMeta);
+
+    // Autosave: without the footer "Add" button this is the only point where an exercise joins the workout.
+    // Pass the freshly computed meta so the parent's request builder doesn't see stale state from closure.
+    notifyPersist(nextLines, nextMeta);
+
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
@@ -292,37 +316,81 @@ export function WorkoutModal({
   }
 
   function removeDraftLine(lineId) {
-    setDraftLines((prev) => normalizeDraftPlanHeadNext(prev.filter((l) => l.id !== lineId)));
-    setExerciseMeta((prev) => {
-      const next = { ...prev };
-      delete next[lineId];
-      return next;
-    });
+    // Filtering a row re-derives the bar position: removing a DONE row shrinks barIndex, removing PLANNED leaves it.
+    const nextLines = draftLines.filter((l) => l.id !== lineId);
+    const nextMeta = { ...exerciseMeta };
+    delete nextMeta[lineId];
+    setDraftLines(nextLines);
+    setExerciseMeta(nextMeta);
+
+    // Autosave on remove — mirrors the add/drop flow so the server snapshot stays in sync without a submit button.
+    notifyPersist(nextLines, nextMeta);
   }
 
   function clearEntireDraft() {
     setDraftLines([]);
     setExerciseMeta({});
-    setDraftDragOverIndex(null);
-    setDraftDraggingIndex(null);
+    setDropTarget(null);
+    setDragState(null);
   }
 
-  function moveDraftLine(fromIndex, toIndex) {
-    setDraftLines((prev) => normalizeDraftPlanHeadNext(reorderDraftIndices(prev, fromIndex, toIndex)));
+  /**
+   * Fires parent's persistence hook with the freshly computed draft (no-op if not provided).
+   * The optional {@code nextMeta} lets callers that mutate exerciseMeta (add/remove) hand the
+   * post-update map in directly, so the parent's request builder doesn't read stale closure state.
+   */
+  function notifyPersist(nextLines, nextMeta) {
+    if (typeof onDraftPersist !== "function") return;
+    if (!Array.isArray(nextLines)) return;
+    try {
+      onDraftPersist(nextLines, nextMeta);
+    } catch {
+      /* Parent logs / surfaces errors — don't crash the modal on a transient persist failure. */
+    }
   }
 
-  /** PLANNED ↔ NEXT so several rows can be submitted as performed in one Add (BE stores NEXT as DONE). */
-  function toggleDraftLinePlanStatus(lineId) {
+  /** Drop-above rule: an exercise dragged onto the row at {@code targetIndex} lands directly above it. */
+  function handleExerciseDropAbove(fromIndex, targetIndex) {
     if (isSubmitting) return;
-    setDraftLines((prev) =>
-      prev.map((line) => {
-        if (line.id !== lineId) return line;
-        const s = normalizeExerciseStatus(line);
-        if (s === "PLANNED") return { ...line, status: "NEXT" };
-        if (s === "NEXT") return { ...line, status: "PLANNED" };
-        return line;
-      })
-    );
+    setDraftLines((prev) => {
+      const { lines: next, changed } = moveDraftExerciseAbove(prev, fromIndex, targetIndex);
+      if (!changed) return prev;
+      notifyPersist(next);
+      return next;
+    });
+  }
+
+  /** Dropping an exercise onto the progress bar → item lands right ABOVE the bar (last DONE). */
+  function handleExerciseDropOnBar(fromIndex) {
+    if (isSubmitting) return;
+    setDraftLines((prev) => {
+      const { lines: next, changed } = moveDraftExerciseAboveBar(prev, fromIndex);
+      if (!changed) return prev;
+      notifyPersist(next);
+      return next;
+    });
+  }
+
+  /** Tail drop zone: no target row → append the exercise at the very end (keeps DONE-first invariant). */
+  function handleExerciseAppend(fromIndex) {
+    if (isSubmitting) return;
+    setDraftLines((prev) => {
+      const { lines: next, changed } = appendDraftExerciseToEnd(prev, fromIndex);
+      if (!changed) return prev;
+      notifyPersist(next);
+      return next;
+    });
+  }
+
+  /** Move the progress bar so that the first {@code nextBarIndex} exercises become DONE, the rest PLANNED. */
+  function handleBarDropAt(nextBarIndex) {
+    if (isSubmitting) return;
+    setDraftLines((prev) => {
+      const next = applyBarIndex(prev, nextBarIndex);
+      if (next === prev) return prev;
+      notifyPersist(next);
+      return next;
+    });
   }
 
   function setExerciseField(lineId, field, raw) {
@@ -331,6 +399,30 @@ export function WorkoutModal({
       ...prev,
       [lineId]: { ...(prev[lineId] || { weight: "0", reps: "" }), [field]: value },
     }));
+  }
+
+  function rowDropTargetClass(index) {
+    if (dropTarget?.kind === "row" && dropTarget.index === index) return " exerciseRow--dragOver";
+    return "";
+  }
+
+  function barDropTargetClass() {
+    if (dropTarget?.kind === "bar") return " workoutProgressBar--dragOver";
+    return "";
+  }
+
+  function endZoneDropTargetClass() {
+    if (dropTarget?.kind === "end") return " workoutEndDrop--dragOver";
+    return "";
+  }
+
+  /** Reads the DnD kind from the current drag (exercise / bar) — null if neither type is present. */
+  function readDragKind(e) {
+    const types = e.dataTransfer?.types;
+    if (!types) return null;
+    if (Array.prototype.includes.call(types, BAR_DND_TYPE)) return "bar";
+    if (Array.prototype.includes.call(types, DRAFT_DND_TYPE)) return "exercise";
+    return null;
   }
 
   return (
@@ -455,6 +547,7 @@ export function WorkoutModal({
             {pickerLoadError ? (
               <div className="errorText">Lista ćwiczeń: {pickerLoadError} — możesz dodać własne („Dodaj własne…”).</div>
             ) : null}
+            {submitError ? <div className="errorText">{submitError}</div> : null}
             <section className="groupSection" aria-label="Current workout">
               <div className="groupHeaderRow">
                 <div className="groupHeader">Your workout</div>
@@ -561,123 +654,68 @@ export function WorkoutModal({
               {draftLines.length > 0 ? (
                 <div className="checks checks--draftFlip" ref={draftFlipContainerRef}>
                   {draftLines.map((line, index) => {
-                    const rowStatus = normalizeExerciseStatus(line);
-                    const canTogglePlanStatus = rowStatus === "PLANNED" || rowStatus === "NEXT";
-                    return (
-                      <div
-                        data-draft-row-id={line.id}
-                        className={`exerciseRow exerciseRow--${rowStatusModifier(line)}${
-                          draftDragOverIndex === index ? " exerciseRow--dragOver" : ""
-                        }${draftDraggingIndex === index ? " exerciseRow--dragging" : ""}${
-                          canTogglePlanStatus ? " exerciseRow--planClickable" : ""
-                        }`}
-                        key={line.id}
-                        draggable={false}
-                        tabIndex={canTogglePlanStatus && !isSubmitting ? 0 : undefined}
-                        aria-label={
-                          canTogglePlanStatus
-                            ? `${line.name}: ${rowStatus === "NEXT" ? "następne — kliknij pasek, by ustawić jako planowane" : "planowane — kliknij pasek, by ustawić jako następne"}`
-                            : undefined
-                        }
-                        onClick={
-                          canTogglePlanStatus && !isSubmitting
-                            ? () => toggleDraftLinePlanStatus(line.id)
-                            : undefined
-                        }
-                        onKeyDown={
-                          canTogglePlanStatus && !isSubmitting
-                            ? (e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  toggleDraftLinePlanStatus(line.id);
-                                }
-                              }
-                            : undefined
-                        }
-                        onDragOver={(e) => {
-                          if (isSubmitting) return;
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          setDraftDragOverIndex(index);
-                        }}
-                        onDrop={(e) => {
-                          if (isSubmitting) return;
-                          e.preventDefault();
-                          const raw =
-                            e.dataTransfer.getData(DRAFT_DND_TYPE) ||
-                            e.dataTransfer.getData("text/plain");
-                          const fromIndex = Number.parseInt(raw, 10);
-                          setDraftDragOverIndex(null);
-                          if (!Number.isFinite(fromIndex)) return;
-                          moveDraftLine(fromIndex, index);
-                        }}
-                      >
-                      <div
-                        className="dragHandle"
-                        title="Przeciągnij, aby zmienić kolejność"
-                        aria-label={`Zmień kolejność: ${line.name}`}
-                        draggable={!isSubmitting}
-                        onClick={(e) => e.stopPropagation()}
-                        onDragStart={(e) => {
-                          if (isSubmitting) {
-                            e.preventDefault();
-                            return;
-                          }
-                          e.stopPropagation();
-                          setDraftDraggingIndex(index);
-                          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
-                          e.dataTransfer.setData("text/plain", String(index));
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        onDragEnd={(e) => {
-                          e.stopPropagation();
-                          setDraftDragOverIndex(null);
-                          setDraftDraggingIndex(null);
-                        }}
-                      >
-                        <span className="dragHandleGrip" aria-hidden="true" />
-                      </div>
-                      <div className="exerciseNameCell">
-                        <span className="muscleTag" title="Partia">
-                          {line.group}
-                        </span>
-                        <span className="check-text">{line.name}</span>
-                      </div>
-                      <div className="exerciseFields" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          className="numField"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          maxLength={4}
-                          placeholder="Weight"
-                          value={exerciseMeta[line.id]?.weight || ""}
-                          onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
-                          onFocus={(e) => e.target.select()}
-                        />
-                        <input
-                          className="numField"
-                          inputMode="numeric"
-                          pattern="[0-9]*"
-                          maxLength={4}
-                          placeholder="Reps"
-                          value={exerciseMeta[line.id]?.reps || ""}
-                          onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
-                          onFocus={(e) => e.target.select()}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="rowRemove"
-                        aria-label={`Remove ${line.name}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeDraftLine(line.id);
-                        }}
-                      >
-                        ×
-                      </button>
-                      </div>
-                    );
+                    const row = renderExerciseRow({
+                      line,
+                      index,
+                      isSubmitting,
+                      dragState,
+                      dropTarget,
+                      exerciseMeta,
+                      rowDropTargetClass,
+                      readDragKind,
+                      setDragState,
+                      setDropTarget,
+                      setExerciseField,
+                      removeDraftLine,
+                      handleExerciseDropAbove,
+                      handleBarDropAt,
+                    });
+                    // Progress bar sits between rows at the boundary index — rendered before the first PLANNED row.
+                    if (index === barIndex) {
+                      return (
+                        <React.Fragment key={`bar-slot-${index}`}>
+                          {renderProgressBar({
+                            atIndex: barIndex,
+                            totalRows: draftLines.length,
+                            isSubmitting,
+                            barDropTargetClass,
+                            dragState,
+                            setDragState,
+                            setDropTarget,
+                            readDragKind,
+                            handleBarDropAt,
+                            handleExerciseDropOnBar,
+                          })}
+                          {row}
+                        </React.Fragment>
+                      );
+                    }
+                    return <React.Fragment key={line.id}>{row}</React.Fragment>;
+                  })}
+                  {/* End-of-list drop zone: renders bar at the bottom when barIndex === length, and accepts drops for append / bar-to-bottom. */}
+                  {barIndex === draftLines.length
+                    ? renderProgressBar({
+                        atIndex: draftLines.length,
+                        totalRows: draftLines.length,
+                        isSubmitting,
+                        barDropTargetClass,
+                        dragState,
+                        setDragState,
+                        setDropTarget,
+                        readDragKind,
+                        handleBarDropAt,
+                        handleExerciseDropOnBar,
+                      })
+                    : null}
+                  {renderEndDropZone({
+                    totalRows: draftLines.length,
+                    endZoneDropTargetClass,
+                    isSubmitting,
+                    readDragKind,
+                    setDropTarget,
+                    setDragState,
+                    handleExerciseAppend,
+                    handleBarDropAt,
                   })}
                 </div>
               ) : (
@@ -686,23 +724,271 @@ export function WorkoutModal({
             </section>
           </div>
 
-          <div className="modal-foot">
-            {submitError ? <div className="errorText">{submitError}</div> : null}
-            <div className="spacer" />
-            <button className="btn" type="button" onClick={onClose} disabled={isSubmitting}>
-              Cancel
-            </button>
-            <button
-              className="btn primary"
-              type="button"
-              onClick={onSubmit}
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "Sending..." : "Add"}
-            </button>
-          </div>
         </div>
       </div>
     </>
+  );
+}
+
+/** Exercise row renderer — extracted to keep the modal return JSX flat and readable. */
+function renderExerciseRow({
+  line,
+  index,
+  isSubmitting,
+  dragState,
+  dropTarget,
+  exerciseMeta,
+  rowDropTargetClass,
+  readDragKind,
+  setDragState,
+  setDropTarget,
+  setExerciseField,
+  removeDraftLine,
+  handleExerciseDropAbove,
+  handleBarDropAt,
+}) {
+  // Only two row states now: DONE (above bar, green) and PLANNED (below bar, blue).
+  // The former "next up" highlight was dropped — all planned rows share one color.
+  const rowStatus = normalizeExerciseStatus(line);
+  const isDragging = dragState?.kind === "exercise" && dragState.fromIndex === index;
+
+  return (
+    <div
+      data-draft-row-id={line.id}
+      className={`exerciseRow exerciseRow--${rowStatusModifier({ status: rowStatus })}${rowDropTargetClass(index)}${isDragging ? " exerciseRow--dragging" : ""}`}
+      draggable={false}
+      onDragOver={(e) => {
+        if (isSubmitting) return;
+        const kind = readDragKind(e);
+        if (!kind) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDropTarget({ kind: "row", index });
+      }}
+      onDragLeave={() => {
+        setDropTarget((prev) =>
+          prev?.kind === "row" && prev.index === index ? null : prev
+        );
+      }}
+      onDrop={(e) => {
+        if (isSubmitting) return;
+        const kind = readDragKind(e);
+        if (!kind) return;
+        e.preventDefault();
+        setDropTarget(null);
+        setDragState(null);
+        if (kind === "exercise") {
+          // Drop-above rule: exercise lands directly above the hovered row (inherits its status).
+          const raw =
+            e.dataTransfer.getData(DRAFT_DND_TYPE) ||
+            e.dataTransfer.getData("text/plain");
+          const fromIndex = Number.parseInt(raw, 10);
+          if (!Number.isFinite(fromIndex)) return;
+          handleExerciseDropAbove(fromIndex, index);
+          return;
+        }
+        // Bar dropped on a row → bar renders ABOVE that row (barIndex = row's current index).
+        handleBarDropAt(index);
+      }}
+    >
+      <div
+        className="dragHandle"
+        title="Przeciągnij, aby zmienić kolejność"
+        aria-label={`Zmień kolejność: ${line.name}`}
+        draggable={!isSubmitting}
+        onDragStart={(e) => {
+          if (isSubmitting) {
+            e.preventDefault();
+            return;
+          }
+          e.stopPropagation();
+          setDragState({ kind: "exercise", fromIndex: index });
+          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
+          e.dataTransfer.setData("text/plain", String(index));
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={(e) => {
+          e.stopPropagation();
+          setDropTarget(null);
+          setDragState(null);
+        }}
+      >
+        <span className="dragHandleGrip" aria-hidden="true" />
+      </div>
+      <div className="exerciseNameCell">
+        <span className="muscleTag" title="Partia">
+          {line.group}
+        </span>
+        <span className="check-text">{line.name}</span>
+      </div>
+      <div className="exerciseFields">
+        <input
+          className="numField"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          placeholder="Weight"
+          value={exerciseMeta[line.id]?.weight || ""}
+          onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
+          onFocus={(e) => e.target.select()}
+        />
+        <input
+          className="numField"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          placeholder="Reps"
+          value={exerciseMeta[line.id]?.reps || ""}
+          onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
+          onFocus={(e) => e.target.select()}
+        />
+      </div>
+      <button
+        type="button"
+        className="rowRemove"
+        aria-label={`Remove ${line.name}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          removeDraftLine(line.id);
+        }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+/** Progress bar row — draggable boundary between DONE (above) and PLANNED (below). */
+function renderProgressBar({
+  atIndex,
+  totalRows,
+  isSubmitting,
+  barDropTargetClass,
+  dragState,
+  setDragState,
+  setDropTarget,
+  readDragKind,
+  handleBarDropAt,
+  handleExerciseDropOnBar,
+}) {
+  const isDraggingBar = dragState?.kind === "bar";
+  const doneCount = atIndex;
+  const plannedCount = Math.max(0, totalRows - atIndex);
+
+  return (
+    <div
+      // Stable id lets the FLIP layout-effect track the bar alongside exercise rows — without it the
+      // bar would teleport between positions instead of animating like a reordered row.
+      data-draft-row-id="__bar__"
+      className={`workoutProgressBar${isDraggingBar ? " workoutProgressBar--dragging" : ""}${barDropTargetClass()}`}
+      role="separator"
+      aria-label={`Postęp: ${doneCount} zrobione, ${plannedCount} do zrobienia. Przeciągnij, aby zmienić.`}
+      onDragOver={(e) => {
+        if (isSubmitting) return;
+        const kind = readDragKind(e);
+        if (!kind) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDropTarget({ kind: "bar" });
+      }}
+      onDragLeave={() => {
+        setDropTarget((prev) => (prev?.kind === "bar" ? null : prev));
+      }}
+      onDrop={(e) => {
+        if (isSubmitting) return;
+        const kind = readDragKind(e);
+        if (!kind) return;
+        e.preventDefault();
+        setDropTarget(null);
+        setDragState(null);
+        if (kind === "bar") return; // dropping bar onto itself — no-op
+        const raw =
+          e.dataTransfer.getData(DRAFT_DND_TYPE) ||
+          e.dataTransfer.getData("text/plain");
+        const fromIndex = Number.parseInt(raw, 10);
+        if (!Number.isFinite(fromIndex)) return;
+        handleExerciseDropOnBar(fromIndex);
+      }}
+    >
+      <div
+        className="workoutProgressBar__handle"
+        title="Przeciągnij pasek, aby wyznaczyć, do którego ćwiczenia dotarłeś"
+        aria-label="Przeciągnij pasek postępu"
+        draggable={!isSubmitting}
+        onDragStart={(e) => {
+          if (isSubmitting) {
+            e.preventDefault();
+            return;
+          }
+          e.stopPropagation();
+          setDragState({ kind: "bar" });
+          e.dataTransfer.setData(BAR_DND_TYPE, "1");
+          e.dataTransfer.effectAllowed = "move";
+        }}
+        onDragEnd={(e) => {
+          e.stopPropagation();
+          setDropTarget(null);
+          setDragState(null);
+        }}
+      >
+        <span className="workoutProgressBar__grip" aria-hidden="true" />
+      </div>
+      <div className="workoutProgressBar__label">
+        <span className="workoutProgressBar__labelText">Progress</span>
+        <span className="workoutProgressBar__counter">
+          {doneCount}/{totalRows}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** Invisible tail drop zone. Accepts exercise drops (append) and bar drops (bar to bottom). */
+function renderEndDropZone({
+  totalRows,
+  endZoneDropTargetClass,
+  isSubmitting,
+  readDragKind,
+  setDropTarget,
+  setDragState,
+  handleExerciseAppend,
+  handleBarDropAt,
+}) {
+  if (totalRows === 0) return null;
+  return (
+    <div
+      className={`workoutEndDrop${endZoneDropTargetClass()}`}
+      aria-hidden="true"
+      onDragOver={(e) => {
+        if (isSubmitting) return;
+        const kind = readDragKind(e);
+        if (!kind) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setDropTarget({ kind: "end" });
+      }}
+      onDragLeave={() => {
+        setDropTarget((prev) => (prev?.kind === "end" ? null : prev));
+      }}
+      onDrop={(e) => {
+        if (isSubmitting) return;
+        const kind = readDragKind(e);
+        if (!kind) return;
+        e.preventDefault();
+        // Clear both drop highlight and active drag so the source row stops rendering as "dragging".
+        setDropTarget(null);
+        setDragState(null);
+        if (kind === "bar") {
+          handleBarDropAt(totalRows);
+          return;
+        }
+        const raw =
+          e.dataTransfer.getData(DRAFT_DND_TYPE) ||
+          e.dataTransfer.getData("text/plain");
+        const fromIndex = Number.parseInt(raw, 10);
+        if (!Number.isFinite(fromIndex)) return;
+        handleExerciseAppend(fromIndex);
+      }}
+    />
   );
 }
