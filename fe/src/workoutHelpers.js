@@ -163,6 +163,34 @@ export function lastPlannedComposerPrefill(draftLines, exerciseMeta) {
   return { ...empty };
 }
 
+/**
+ * Last row in {@code draftLines} (visual list order): group, name, weight/reps for the sticky composer.
+ * Used when opening the modal so the composer matches the tail row even if every row is DONE.
+ */
+export function lastDraftLineComposerPrefill(draftLines, exerciseMeta) {
+  const empty = {
+    rowId: "",
+    group: null,
+    name: null,
+    exerciseId: null,
+    weight: "0",
+    reps: "",
+  };
+  if (!draftLines?.length) return { ...empty };
+  const line = draftLines[draftLines.length - 1];
+  const m = exerciseMeta[line.id] || { weight: "0", reps: "" };
+  const w = m.weight != null && String(m.weight) !== "" ? String(m.weight) : "0";
+  const r = m.reps != null && String(m.reps) !== "" ? String(m.reps) : "";
+  return {
+    rowId: line.id,
+    group: line.group,
+    name: line.name,
+    exerciseId: line.exerciseId != null ? line.exerciseId : null,
+    weight: w,
+    reps: r,
+  };
+}
+
 /** Weight/reps only — same source as {@link lastPlannedComposerPrefill}. */
 export function lastPlannedExerciseMeta(draftLines, exerciseMeta) {
   const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
@@ -276,12 +304,41 @@ function prefillNumberToDigitsField(value) {
   return digits4(String(Math.round(n)));
 }
 
+/** Max characters in modal weight/reps inputs (digits + optional single decimal separator). */
+export const MAX_WEIGHT_INPUT_LEN = 8;
+export const MAX_REPS_INPUT_LEN = 6;
+
+/**
+ * Keeps digits and at most one decimal separator (comma or dot) for locale-friendly typing.
+ * Does not normalize comma↔dot so Polish users can keep "," in the field while editing.
+ */
+export function sanitizeOptionalDecimalInput(value, maxLen) {
+  const cap = Math.max(1, maxLen);
+  const str = String(value ?? "");
+  let hasSep = false;
+  const out = [];
+  for (let i = 0; i < str.length; i++) {
+    if (out.length >= cap) break;
+    const c = str[i];
+    if (c >= "0" && c <= "9") {
+      out.push(c);
+      continue;
+    }
+    if ((c === "," || c === ".") && !hasSep) {
+      hasSep = true;
+      out.push(c);
+    }
+  }
+  return out.join("");
+}
+
 /** Prefill weight: missing or invalid → "0" so bodyweight / no-BE-weight rows are editable. */
 function prefillWeightField(value) {
   if (value == null || value === "") return "0";
   const n = Number(value);
   if (!Number.isFinite(n)) return "0";
-  return digits4(String(Math.round(n)));
+  const withComma = String(n).replace(".", ",");
+  return sanitizeOptionalDecimalInput(withComma, MAX_WEIGHT_INPUT_LEN);
 }
 
 export function formatWorkoutDate(isoDate) {
@@ -307,11 +364,27 @@ export function parseIntOrNull(s) {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Empty weight field submits as 0 (bodyweight / default). */
-export function parseWeightIntOrNull(s) {
+/** Empty weight field submits as 0 (bodyweight / default). Accepts "," or "." as decimal separator. */
+export function parseWeightForApi(s) {
   if (s === "" || s == null) return 0;
-  const n = Number.parseInt(String(s), 10);
+  const t = String(s).trim().replace(",", ".");
+  if (t === "" || t === ".") return 0;
+  const n = Number(t);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Reps are integers on the API; accept "," or "." while typing and round when serializing.
+ * Empty / invalid → null (caller may omit or let BE validate).
+ */
+export function parseRepsIntForApi(s) {
+  if (s === "" || s == null) return null;
+  const t = String(s).trim().replace(",", ".");
+  if (t === "" || t === ".") return null;
+  const n = Number(t);
+  if (!Number.isFinite(n)) return null;
+  const rounded = Math.round(n);
+  return rounded > 0 ? rounded : null;
 }
 
 export function newDraftLineId() {

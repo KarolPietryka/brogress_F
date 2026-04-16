@@ -8,8 +8,8 @@ import {
   mapPrefillToDraft,
   mapSummaryItemToDraft,
   formatWorkoutDate,
-  parseIntOrNull,
-  parseWeightIntOrNull,
+  parseRepsIntForApi,
+  parseWeightForApi,
 } from "./workoutHelpers.js";
 import { GraphPanel } from "./GraphPanel.jsx";
 import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
@@ -200,8 +200,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
       row.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
       row.name = line.name;
       row.exerciseId = line.exerciseId != null ? line.exerciseId : null;
-      row.weight = parseWeightIntOrNull(meta[line.id]?.weight);
-      row.reps = parseIntOrNull(meta[line.id]?.reps || "");
+      row.weight = parseWeightForApi(meta[line.id]?.weight);
+      row.reps = parseRepsIntForApi(meta[line.id]?.reps || "");
       row.status = line.status ?? "PLANNED";
       return row;
     });

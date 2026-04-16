@@ -5,18 +5,21 @@ import { BODY_PART_API_NAME, MUSCLE_GROUPS } from "./workoutData.js";
 import {
   appendDraftExerciseToEnd,
   applyBarIndex,
+  BAR_DND_TYPE,
   computeBarIndex,
-  digits4,
+  DRAFT_DND_TYPE,
+  DRAFT_FLIP_EASING,
+  DRAFT_FLIP_MS,
+  lastDraftLineComposerPrefill,
   lastPlannedComposerPrefill,
+  MAX_REPS_INPUT_LEN,
+  MAX_WEIGHT_INPUT_LEN,
   moveDraftExerciseAbove,
   moveDraftExerciseAboveBar,
   newDraftLineId,
   normalizeExerciseStatus,
   rowStatusModifier,
-  BAR_DND_TYPE,
-  DRAFT_DND_TYPE,
-  DRAFT_FLIP_MS,
-  DRAFT_FLIP_EASING,
+  sanitizeOptionalDecimalInput,
 } from "./workoutHelpers.js";
 
 /**
@@ -78,6 +81,10 @@ export function WorkoutModal({
   const prevDraftLayoutRef = useRef(new Map());
   const prevDraftLinesForFlipRef = useRef(null);
   const modalBodyRef = useRef(null);
+  /** One-shot: after mount, seed composer from the list tail (incl. all-DONE sessions). */
+  const openComposerPrefillDoneRef = useRef(false);
+  /** Skip the next draft-driven sync so + does not overwrite in-flight composer edits. */
+  const skipNextComposerPrefillSyncRef = useRef(false);
 
   const barIndex = useMemo(() => computeBarIndex(draftLines), [draftLines]);
 
@@ -136,6 +143,31 @@ export function WorkoutModal({
   }, [draftLines, exerciseMeta]);
 
   useLayoutEffect(() => {
+    // Opening the modal: always mirror the last list row (DONE or PLANNED) once per mount.
+    if (!openComposerPrefillDoneRef.current) {
+      openComposerPrefillDoneRef.current = true;
+      if (draftLines.length === 0) {
+        setComposerWeight("0");
+        setComposerReps("");
+        setComposerGroup(MUSCLE_GROUPS[0] || "");
+        setComposerExercise("");
+        setComposerExerciseId(null);
+        return;
+      }
+      const tail = lastDraftLineComposerPrefill(draftLines, exerciseMeta);
+      setComposerWeight(tail.weight);
+      setComposerReps(tail.reps);
+      setComposerGroup(tail.group || MUSCLE_GROUPS[0] || "");
+      setComposerExercise(tail.name || "");
+      setComposerExerciseId(tail.exerciseId != null ? tail.exerciseId : null);
+      return;
+    }
+
+    if (skipNextComposerPrefillSyncRef.current) {
+      skipNextComposerPrefillSyncRef.current = false;
+      return;
+    }
+
     const p = lastPlannedComposerPrefill(draftLines, exerciseMeta);
     if (p.plannedRowId) {
       setComposerWeight(p.weight);
@@ -299,6 +331,7 @@ export function WorkoutModal({
     };
     setDraftLines(nextLines);
     setExerciseMeta(nextMeta);
+    skipNextComposerPrefillSyncRef.current = true;
 
     // Autosave: without the footer "Add" button this is the only point where an exercise joins the workout.
     // Pass the freshly computed meta so the parent's request builder doesn't see stale state from closure.
@@ -619,24 +652,30 @@ export function WorkoutModal({
                   <div className="exerciseFields">
                     <input
                       className="numField"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={4}
+                      inputMode="decimal"
+                      maxLength={MAX_WEIGHT_INPUT_LEN}
                       placeholder="Weight"
                       value={composerWeight}
                       disabled={isSubmitting}
-                      onChange={(e) => setComposerWeight(digits4(e.target.value))}
+                      onChange={(e) =>
+                        setComposerWeight(
+                          sanitizeOptionalDecimalInput(e.target.value, MAX_WEIGHT_INPUT_LEN)
+                        )
+                      }
                       onFocus={(e) => e.target.select()}
                     />
                     <input
                       className="numField"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={4}
+                      inputMode="decimal"
+                      maxLength={MAX_REPS_INPUT_LEN}
                       placeholder="Reps"
                       value={composerReps}
                       disabled={isSubmitting}
-                      onChange={(e) => setComposerReps(digits4(e.target.value))}
+                      onChange={(e) =>
+                        setComposerReps(
+                          sanitizeOptionalDecimalInput(e.target.value, MAX_REPS_INPUT_LEN)
+                        )
+                      }
                       onFocus={(e) => e.target.select()}
                     />
                   </div>
@@ -824,9 +863,8 @@ function renderExerciseRow({
       <div className="exerciseFields">
         <input
           className="numField"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={4}
+          inputMode="decimal"
+          maxLength={MAX_WEIGHT_INPUT_LEN}
           placeholder="Weight"
           value={exerciseMeta[line.id]?.weight || ""}
           onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
@@ -834,9 +872,8 @@ function renderExerciseRow({
         />
         <input
           className="numField"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          maxLength={4}
+          inputMode="decimal"
+          maxLength={MAX_REPS_INPUT_LEN}
           placeholder="Reps"
           value={exerciseMeta[line.id]?.reps || ""}
           onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
