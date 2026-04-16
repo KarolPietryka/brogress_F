@@ -346,6 +346,18 @@ export function WorkoutModal({
         requestAnimationFrame(() => setComposerRowFlash(true));
       });
     }
+
+    // Reveal the new tail row on small viewports (composer stays sticky above the list scroll area).
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const body = modalBodyRef.current;
+        if (!body) return;
+        body.scrollTo({
+          top: body.scrollHeight,
+          behavior: reduceMotion ? "auto" : "smooth",
+        });
+      });
+    });
   }
 
   function removeDraftLine(lineId) {
