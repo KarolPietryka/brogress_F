@@ -533,6 +533,7 @@ export function WorkoutModal({
                       value={composerWeight}
                       disabled={isSubmitting}
                       onChange={(e) => setComposerWeight(digits4(e.target.value))}
+                      onFocus={(e) => e.target.select()}
                     />
                     <input
                       className="numField"
@@ -543,6 +544,7 @@ export function WorkoutModal({
                       value={composerReps}
                       disabled={isSubmitting}
                       onChange={(e) => setComposerReps(digits4(e.target.value))}
+                      onFocus={(e) => e.target.select()}
                     />
                   </div>
                   <button
@@ -650,6 +652,7 @@ export function WorkoutModal({
                           placeholder="Weight"
                           value={exerciseMeta[line.id]?.weight || ""}
                           onChange={(e) => setExerciseField(line.id, "weight", e.target.value)}
+                          onFocus={(e) => e.target.select()}
                         />
                         <input
                           className="numField"
@@ -659,6 +662,7 @@ export function WorkoutModal({
                           placeholder="Reps"
                           value={exerciseMeta[line.id]?.reps || ""}
                           onChange={(e) => setExerciseField(line.id, "reps", e.target.value)}
+                          onFocus={(e) => e.target.select()}
                         />
                       </div>
                       <button
