@@ -511,7 +511,20 @@ export function WorkoutModal({
     while (el && !(el instanceof HTMLElement && el.dataset && el.dataset.dropKind)) {
       el = el.parentElement;
     }
-    return el instanceof HTMLElement ? el : null;
+    if (el instanceof HTMLElement) return el;
+
+    // "Dragged past the bottom" fallback — if the pointer is still horizontally over the
+    // draft list but below the last drop zone, snap to the end zone. Matches the expectation
+    // that releasing below the lowest row appends the item at the very end.
+    const container = draftFlipContainerRef.current;
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    if (x < rect.left || x > rect.right) return null;
+    const endZone = container.querySelector('[data-drop-kind="end"]');
+    if (!(endZone instanceof HTMLElement)) return null;
+    const endRect = endZone.getBoundingClientRect();
+    if (y > endRect.top) return endZone;
+    return null;
   }
 
   function activatePointerDrag() {
