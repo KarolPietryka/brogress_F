@@ -323,6 +323,36 @@ export function WorkoutModal({
     }
   }
 
+  /**
+   * Tap / click on a draft row: copy its values into the sticky composer so the user can
+   * re-add the same exercise with one "+". Triggered only when the pointer gesture did NOT
+   * activate a drag — regular drag-and-drop keeps working untouched.
+   */
+  function prefillComposerFromRow(index) {
+    const line = draftLinesRef.current[index];
+    if (!line) return;
+    const meta = exerciseMeta[line.id] || { weight: "0", reps: "" };
+    setComposerGroup(line.group || MUSCLE_GROUPS[0] || "");
+    setComposerExercise(line.name || "");
+    setComposerExerciseId(line.exerciseId != null ? line.exerciseId : null);
+    setComposerWeight(meta.weight || "0");
+    setComposerReps(meta.reps || "");
+    // Block the next draft-driven sync — otherwise the "lastPlanned" effect would overwrite
+    // our picks on the following render if something downstream touches draftLines.
+    skipNextComposerPrefillSyncRef.current = true;
+
+    // Re-use the existing + button flash so the user gets the same visual confirmation.
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (!reduceMotion) {
+      setComposerRowFlash(false);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setComposerRowFlash(true));
+      });
+    }
+  }
+
   function addExerciseFromComposer() {
     if (!composerGroup || !composerExercise) return;
     const id = newDraftLineId();
@@ -469,6 +499,8 @@ export function WorkoutModal({
     handleBarDropAt,
     handleExerciseDropOnBar,
     handleExerciseAppend,
+    // Tap-to-prefill handler shares the same ref so pointerup always sees the latest closure.
+    prefillComposerFromRow,
   };
   /** Active pointer-drag session (or null). See {@link startPointerDrag} for the shape. */
   const pointerDragRef = useRef(null);
@@ -564,21 +596,36 @@ export function WorkoutModal({
   function onPointerDragUp(e) {
     const d = pointerDragRef.current;
     if (!d || d.pointerId !== e.pointerId) return;
+    const h = dropHandlersRef.current;
     if (d.active) {
       // Resolve the drop against whatever zone the pointer was last over.
       const target = dropTargetRef.current;
       const total = draftLinesRef.current.length;
-      const h = dropHandlersRef.current;
       if (target) {
         if (d.kind === "exercise") {
-          if (target.kind === "row") h.handleExerciseDropAbove(d.fromIndex, target.index);
-          else if (target.kind === "bar") h.handleExerciseDropOnBar(d.fromIndex);
-          else if (target.kind === "end") h.handleExerciseAppend(d.fromIndex);
+          // Drop-on-self (drag activated but never moved off the source row) reads as a tap →
+          // prefill instead of a no-op "drop above itself".
+          if (target.kind === "row" && target.index === d.fromIndex) {
+            h.prefillComposerFromRow(d.fromIndex);
+          } else if (target.kind === "row") {
+            h.handleExerciseDropAbove(d.fromIndex, target.index);
+          } else if (target.kind === "bar") {
+            h.handleExerciseDropOnBar(d.fromIndex);
+          } else if (target.kind === "end") {
+            h.handleExerciseAppend(d.fromIndex);
+          }
         } else if (d.kind === "bar") {
           if (target.kind === "row") h.handleBarDropAt(target.index);
           else if (target.kind === "end") h.handleBarDropAt(total);
         }
+      } else if (d.kind === "exercise") {
+        // Drag activated but released outside any drop zone → fall back to tap semantics.
+        h.prefillComposerFromRow(d.fromIndex);
       }
+    } else if (d.kind === "exercise") {
+      // No drag was activated → treat the gesture as a tap/click and prefill the composer
+      // with the tapped row's values. Quick mobile taps (below long-press) fall here too.
+      h.prefillComposerFromRow(d.fromIndex);
     }
     teardownPointerDrag();
   }
