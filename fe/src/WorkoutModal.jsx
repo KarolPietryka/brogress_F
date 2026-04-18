@@ -439,7 +439,10 @@ export function WorkoutModal({
   }
 
   function setExerciseField(lineId, field, raw) {
-    const value = digits4(raw);
+    // Mirror composer behavior: same decimal sanitizer + per-field length cap.
+    // (Previously this called an undefined `digits4`, which threw and blocked edits on existing rows.)
+    const maxLen = field === "weight" ? MAX_WEIGHT_INPUT_LEN : MAX_REPS_INPUT_LEN;
+    const value = sanitizeOptionalDecimalInput(raw, maxLen);
     setExerciseMeta((prev) => ({
       ...prev,
       [lineId]: { ...(prev[lineId] || { weight: "0", reps: "" }), [field]: value },
