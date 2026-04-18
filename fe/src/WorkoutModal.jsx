@@ -5,9 +5,7 @@ import { BODY_PART_API_NAME, MUSCLE_GROUPS } from "./workoutData.js";
 import {
   appendDraftExerciseToEnd,
   applyBarIndex,
-  BAR_DND_TYPE,
   computeBarIndex,
-  DRAFT_DND_TYPE,
   DRAFT_FLIP_EASING,
   DRAFT_FLIP_MS,
   lastDraftLineComposerPrefill,
@@ -21,6 +19,18 @@ import {
   rowStatusModifier,
   sanitizeOptionalDecimalInput,
 } from "./workoutHelpers.js";
+
+/**
+ * Pointer-based drag activation thresholds. Native HTML5 DnD was replaced because:
+ *  - Mobile Safari/Chrome require ~500 ms long-press to activate and often hijack the gesture
+ *    as text selection, making reordering feel broken.
+ *  - HTML5 DnD source is a single child handle; users expect to grab the whole row/bar.
+ * Pointer Events give us uniform mouse/touch/pen handling and full control over when a drag
+ * begins, so we can keep mobile scrolling intact while still making drag feel instant.
+ */
+const POINTER_LONG_PRESS_MS = 220;
+const POINTER_TOUCH_CANCEL_PX = 8;
+const POINTER_MOUSE_ACTIVATE_PX = 4;
 
 /**
  * Workout composer / editor. Progress-bar model:
@@ -438,6 +448,187 @@ export function WorkoutModal({
     });
   }
 
+  // --- Pointer-based DnD ---------------------------------------------------
+  // Refs mirror fresh values for pointer listeners attached on window (their closure would
+  // otherwise capture stale handlers/state from the render where the drag started).
+  const dropTargetRef = useRef(null);
+  useEffect(() => {
+    dropTargetRef.current = dropTarget;
+  }, [dropTarget]);
+  const draftLinesRef = useRef(draftLines);
+  useEffect(() => {
+    draftLinesRef.current = draftLines;
+  }, [draftLines]);
+  const isSubmittingRef = useRef(isSubmitting);
+  useEffect(() => {
+    isSubmittingRef.current = isSubmitting;
+  }, [isSubmitting]);
+  const dropHandlersRef = useRef({});
+  dropHandlersRef.current = {
+    handleExerciseDropAbove,
+    handleBarDropAt,
+    handleExerciseDropOnBar,
+    handleExerciseAppend,
+  };
+  /** Active pointer-drag session (or null). See {@link startPointerDrag} for the shape. */
+  const pointerDragRef = useRef(null);
+
+  /** Walk up from the hit element to the nearest [data-drop-kind] zone (row / bar / end). */
+  function hitTestDropZone(x, y) {
+    let el = document.elementFromPoint(x, y);
+    while (el && !(el instanceof HTMLElement && el.dataset && el.dataset.dropKind)) {
+      el = el.parentElement;
+    }
+    return el instanceof HTMLElement ? el : null;
+  }
+
+  function activatePointerDrag() {
+    const d = pointerDragRef.current;
+    if (!d || d.active) return;
+    d.active = true;
+    if (d.touchHoldTimer) {
+      window.clearTimeout(d.touchHoldTimer);
+      d.touchHoldTimer = null;
+    }
+    // Globally disable touch-action so subsequent touchmoves can be preventDefault-ed.
+    document.body.classList.add("is-pointer-dragging");
+    if (d.kind === "bar") {
+      setDragState({ kind: "bar" });
+    } else {
+      setDragState({ kind: "exercise", fromIndex: d.fromIndex });
+    }
+    // Haptic cue on mobile so the user feels the drag "lock in".
+    if (d.isTouch && typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      try {
+        navigator.vibrate(8);
+      } catch {
+        /* ignore vendor quirks */
+      }
+    }
+  }
+
+  function teardownPointerDrag() {
+    const d = pointerDragRef.current;
+    if (d) {
+      if (d.touchHoldTimer) window.clearTimeout(d.touchHoldTimer);
+      if (d.moveHandler) window.removeEventListener("pointermove", d.moveHandler);
+      if (d.upHandler) {
+        window.removeEventListener("pointerup", d.upHandler);
+        window.removeEventListener("pointercancel", d.upHandler);
+      }
+    }
+    pointerDragRef.current = null;
+    document.body.classList.remove("is-pointer-dragging");
+    setDragState(null);
+    setDropTarget(null);
+  }
+
+  function onPointerDragMove(e) {
+    const d = pointerDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    const dist = Math.hypot(dx, dy);
+
+    // Activation phase: mouse = small move, touch = long-press (timer). Touch scroll cancels.
+    if (!d.active) {
+      if (d.isTouch) {
+        if (dist > POINTER_TOUCH_CANCEL_PX) {
+          // The user is scrolling, not reordering — release so the browser can pan.
+          teardownPointerDrag();
+        }
+        return;
+      }
+      if (dist < POINTER_MOUSE_ACTIVATE_PX) return;
+      activatePointerDrag();
+    }
+
+    // Active drag: suppress native scroll/select and hit-test the pointer against drop zones.
+    e.preventDefault();
+    const zone = hitTestDropZone(e.clientX, e.clientY);
+    if (!zone) {
+      setDropTarget(null);
+      return;
+    }
+    const kind = zone.dataset.dropKind;
+    if (kind === "row") {
+      const idx = Number.parseInt(zone.dataset.dropIndex, 10);
+      if (Number.isFinite(idx)) setDropTarget({ kind: "row", index: idx });
+    } else if (kind === "bar") {
+      setDropTarget({ kind: "bar" });
+    } else if (kind === "end") {
+      setDropTarget({ kind: "end" });
+    }
+  }
+
+  function onPointerDragUp(e) {
+    const d = pointerDragRef.current;
+    if (!d || d.pointerId !== e.pointerId) return;
+    if (d.active) {
+      // Resolve the drop against whatever zone the pointer was last over.
+      const target = dropTargetRef.current;
+      const total = draftLinesRef.current.length;
+      const h = dropHandlersRef.current;
+      if (target) {
+        if (d.kind === "exercise") {
+          if (target.kind === "row") h.handleExerciseDropAbove(d.fromIndex, target.index);
+          else if (target.kind === "bar") h.handleExerciseDropOnBar(d.fromIndex);
+          else if (target.kind === "end") h.handleExerciseAppend(d.fromIndex);
+        } else if (d.kind === "bar") {
+          if (target.kind === "row") h.handleBarDropAt(target.index);
+          else if (target.kind === "end") h.handleBarDropAt(total);
+        }
+      }
+    }
+    teardownPointerDrag();
+  }
+
+  /** Begin a pointer-drag session. {@code kind} is 'exercise' (needs fromIndex) or 'bar'. */
+  function startPointerDrag(e, kind, fromIndex) {
+    if (isSubmittingRef.current) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    // Never swallow interactions inside inputs/buttons — users still need to type weights/reps
+    // and hit the × remove button inside the same row that accepts the drag gesture.
+    if (
+      e.target instanceof HTMLElement &&
+      e.target.closest('input, button, textarea, select, [contenteditable="true"]')
+    ) {
+      return;
+    }
+    const isTouch = e.pointerType === "touch";
+    const move = (ev) => onPointerDragMove(ev);
+    const up = (ev) => onPointerDragUp(ev);
+    const state = {
+      pointerId: e.pointerId,
+      kind,
+      fromIndex: kind === "exercise" ? fromIndex : -1,
+      startX: e.clientX,
+      startY: e.clientY,
+      active: false,
+      isTouch,
+      touchHoldTimer: null,
+      moveHandler: move,
+      upHandler: up,
+    };
+    pointerDragRef.current = state;
+    if (isTouch) {
+      // Long-press before activation: lets the user scroll the list with a normal swipe.
+      state.touchHoldTimer = window.setTimeout(() => {
+        activatePointerDrag();
+      }, POINTER_LONG_PRESS_MS);
+    }
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  // Ensure listeners / body class don't leak if the modal unmounts mid-drag.
+  useEffect(() => {
+    return () => {
+      teardownPointerDrag();
+    };
+  }, []);
+
   function setExerciseField(lineId, field, raw) {
     // Mirror composer behavior: same decimal sanitizer + per-field length cap.
     // (Previously this called an undefined `digits4`, which threw and blocked edits on existing rows.)
@@ -462,15 +653,6 @@ export function WorkoutModal({
   function endZoneDropTargetClass() {
     if (dropTarget?.kind === "end") return " workoutEndDrop--dragOver";
     return "";
-  }
-
-  /** Reads the DnD kind from the current drag (exercise / bar) — null if neither type is present. */
-  function readDragKind(e) {
-    const types = e.dataTransfer?.types;
-    if (!types) return null;
-    if (Array.prototype.includes.call(types, BAR_DND_TYPE)) return "bar";
-    if (Array.prototype.includes.call(types, DRAFT_DND_TYPE)) return "exercise";
-    return null;
   }
 
   return (
@@ -511,7 +693,9 @@ export function WorkoutModal({
       />
       {addCustomOpen
         ? createPortal(
-            <div className="pickList-root" role="presentation">
+            // Centered dialog (not a bottom sheet) — keeps the text input visible above the mobile
+            // soft keyboard, which would otherwise cover a bottom-anchored panel.
+            <div className="pickList-root pickList-root--centered" role="presentation">
               <button
                 type="button"
                 className="pickList-backdrop"
@@ -520,12 +704,11 @@ export function WorkoutModal({
                 onClick={() => !addCustomSubmitting && setAddCustomOpen(false)}
               />
               <div
-                className="pickList-panel pickList-panel--sheet"
+                className="pickList-panel pickList-panel--dialog"
                 role="dialog"
                 aria-label="Własne ćwiczenie"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="pickList-sheetGrip" aria-hidden="true" />
                 <div className="pickList-header">Dodaj własne ćwiczenie</div>
                 <div className="pickList-list" style={{ padding: "12px 16px 16px" }}>
                   {addCustomError ? <div className="errorText">{addCustomError}</div> : null}
@@ -711,18 +894,12 @@ export function WorkoutModal({
                     const row = renderExerciseRow({
                       line,
                       index,
-                      isSubmitting,
                       dragState,
-                      dropTarget,
                       exerciseMeta,
                       rowDropTargetClass,
-                      readDragKind,
-                      setDragState,
-                      setDropTarget,
                       setExerciseField,
                       removeDraftLine,
-                      handleExerciseDropAbove,
-                      handleBarDropAt,
+                      startPointerDrag,
                     });
                     // Progress bar sits between rows at the boundary index — rendered before the first PLANNED row.
                     if (index === barIndex) {
@@ -731,14 +908,9 @@ export function WorkoutModal({
                           {renderProgressBar({
                             atIndex: barIndex,
                             totalRows: draftLines.length,
-                            isSubmitting,
                             barDropTargetClass,
                             dragState,
-                            setDragState,
-                            setDropTarget,
-                            readDragKind,
-                            handleBarDropAt,
-                            handleExerciseDropOnBar,
+                            startPointerDrag,
                           })}
                           {row}
                         </React.Fragment>
@@ -751,25 +923,14 @@ export function WorkoutModal({
                     ? renderProgressBar({
                         atIndex: draftLines.length,
                         totalRows: draftLines.length,
-                        isSubmitting,
                         barDropTargetClass,
                         dragState,
-                        setDragState,
-                        setDropTarget,
-                        readDragKind,
-                        handleBarDropAt,
-                        handleExerciseDropOnBar,
+                        startPointerDrag,
                       })
                     : null}
                   {renderEndDropZone({
                     totalRows: draftLines.length,
                     endZoneDropTargetClass,
-                    isSubmitting,
-                    readDragKind,
-                    setDropTarget,
-                    setDragState,
-                    handleExerciseAppend,
-                    handleBarDropAt,
                   })}
                 </div>
               ) : (
@@ -784,22 +945,20 @@ export function WorkoutModal({
   );
 }
 
-/** Exercise row renderer — extracted to keep the modal return JSX flat and readable. */
+/**
+ * Exercise row renderer — extracted to keep the modal return JSX flat and readable.
+ * Drag gesture is bound to the whole row via pointer events (see {@code startPointerDrag}),
+ * so the grip is purely decorative.
+ */
 function renderExerciseRow({
   line,
   index,
-  isSubmitting,
   dragState,
-  dropTarget,
   exerciseMeta,
   rowDropTargetClass,
-  readDragKind,
-  setDragState,
-  setDropTarget,
   setExerciseField,
   removeDraftLine,
-  handleExerciseDropAbove,
-  handleBarDropAt,
+  startPointerDrag,
 }) {
   // Only two row states now: DONE (above bar, green) and PLANNED (below bar, blue).
   // The former "next up" highlight was dropped — all planned rows share one color.
@@ -809,63 +968,15 @@ function renderExerciseRow({
   return (
     <div
       data-draft-row-id={line.id}
+      data-drop-kind="row"
+      data-drop-index={index}
       className={`exerciseRow exerciseRow--${rowStatusModifier({ status: rowStatus })}${rowDropTargetClass(index)}${isDragging ? " exerciseRow--dragging" : ""}`}
-      draggable={false}
-      onDragOver={(e) => {
-        if (isSubmitting) return;
-        const kind = readDragKind(e);
-        if (!kind) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setDropTarget({ kind: "row", index });
-      }}
-      onDragLeave={() => {
-        setDropTarget((prev) =>
-          prev?.kind === "row" && prev.index === index ? null : prev
-        );
-      }}
-      onDrop={(e) => {
-        if (isSubmitting) return;
-        const kind = readDragKind(e);
-        if (!kind) return;
-        e.preventDefault();
-        setDropTarget(null);
-        setDragState(null);
-        if (kind === "exercise") {
-          // Drop-above rule: exercise lands directly above the hovered row (inherits its status).
-          const raw =
-            e.dataTransfer.getData(DRAFT_DND_TYPE) ||
-            e.dataTransfer.getData("text/plain");
-          const fromIndex = Number.parseInt(raw, 10);
-          if (!Number.isFinite(fromIndex)) return;
-          handleExerciseDropAbove(fromIndex, index);
-          return;
-        }
-        // Bar dropped on a row → bar renders ABOVE that row (barIndex = row's current index).
-        handleBarDropAt(index);
-      }}
+      onPointerDown={(e) => startPointerDrag(e, "exercise", index)}
     >
       <div
         className="dragHandle"
-        title="Przeciągnij, aby zmienić kolejność"
-        aria-label={`Zmień kolejność: ${line.name}`}
-        draggable={!isSubmitting}
-        onDragStart={(e) => {
-          if (isSubmitting) {
-            e.preventDefault();
-            return;
-          }
-          e.stopPropagation();
-          setDragState({ kind: "exercise", fromIndex: index });
-          e.dataTransfer.setData(DRAFT_DND_TYPE, String(index));
-          e.dataTransfer.setData("text/plain", String(index));
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={(e) => {
-          e.stopPropagation();
-          setDropTarget(null);
-          setDragState(null);
-        }}
+        aria-hidden="true"
+        title="Przeciągnij wiersz, aby zmienić kolejność"
       >
         <span className="dragHandleGrip" aria-hidden="true" />
       </div>
@@ -910,18 +1021,16 @@ function renderExerciseRow({
   );
 }
 
-/** Progress bar row — draggable boundary between DONE (above) and PLANNED (below). */
+/**
+ * Progress bar row — draggable boundary between DONE (above) and PLANNED (below).
+ * Like exercise rows, the whole bar surface is the drag source via pointer events.
+ */
 function renderProgressBar({
   atIndex,
   totalRows,
-  isSubmitting,
   barDropTargetClass,
   dragState,
-  setDragState,
-  setDropTarget,
-  readDragKind,
-  handleBarDropAt,
-  handleExerciseDropOnBar,
+  startPointerDrag,
 }) {
   const isDraggingBar = dragState?.kind === "bar";
   const doneCount = atIndex;
@@ -932,57 +1041,14 @@ function renderProgressBar({
       // Stable id lets the FLIP layout-effect track the bar alongside exercise rows — without it the
       // bar would teleport between positions instead of animating like a reordered row.
       data-draft-row-id="__bar__"
+      data-drop-kind="bar"
       className={`workoutProgressBar${isDraggingBar ? " workoutProgressBar--dragging" : ""}${barDropTargetClass()}`}
       role="separator"
       aria-label={`Postęp: ${doneCount} zrobione, ${plannedCount} do zrobienia. Przeciągnij, aby zmienić.`}
-      onDragOver={(e) => {
-        if (isSubmitting) return;
-        const kind = readDragKind(e);
-        if (!kind) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setDropTarget({ kind: "bar" });
-      }}
-      onDragLeave={() => {
-        setDropTarget((prev) => (prev?.kind === "bar" ? null : prev));
-      }}
-      onDrop={(e) => {
-        if (isSubmitting) return;
-        const kind = readDragKind(e);
-        if (!kind) return;
-        e.preventDefault();
-        setDropTarget(null);
-        setDragState(null);
-        if (kind === "bar") return; // dropping bar onto itself — no-op
-        const raw =
-          e.dataTransfer.getData(DRAFT_DND_TYPE) ||
-          e.dataTransfer.getData("text/plain");
-        const fromIndex = Number.parseInt(raw, 10);
-        if (!Number.isFinite(fromIndex)) return;
-        handleExerciseDropOnBar(fromIndex);
-      }}
+      title="Przeciągnij pasek, aby wyznaczyć, do którego ćwiczenia dotarłeś"
+      onPointerDown={(e) => startPointerDrag(e, "bar")}
     >
-      <div
-        className="workoutProgressBar__handle"
-        title="Przeciągnij pasek, aby wyznaczyć, do którego ćwiczenia dotarłeś"
-        aria-label="Przeciągnij pasek postępu"
-        draggable={!isSubmitting}
-        onDragStart={(e) => {
-          if (isSubmitting) {
-            e.preventDefault();
-            return;
-          }
-          e.stopPropagation();
-          setDragState({ kind: "bar" });
-          e.dataTransfer.setData(BAR_DND_TYPE, "1");
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={(e) => {
-          e.stopPropagation();
-          setDropTarget(null);
-          setDragState(null);
-        }}
-      >
+      <div className="workoutProgressBar__handle" aria-hidden="true">
         <span className="workoutProgressBar__grip" aria-hidden="true" />
       </div>
       <div className="workoutProgressBar__label">
@@ -995,52 +1061,14 @@ function renderProgressBar({
   );
 }
 
-/** Invisible tail drop zone. Accepts exercise drops (append) and bar drops (bar to bottom). */
-function renderEndDropZone({
-  totalRows,
-  endZoneDropTargetClass,
-  isSubmitting,
-  readDragKind,
-  setDropTarget,
-  setDragState,
-  handleExerciseAppend,
-  handleBarDropAt,
-}) {
+/** Invisible tail drop zone. Highlighted via {@code data-drop-kind="end"} during pointer drag. */
+function renderEndDropZone({ totalRows, endZoneDropTargetClass }) {
   if (totalRows === 0) return null;
   return (
     <div
       className={`workoutEndDrop${endZoneDropTargetClass()}`}
+      data-drop-kind="end"
       aria-hidden="true"
-      onDragOver={(e) => {
-        if (isSubmitting) return;
-        const kind = readDragKind(e);
-        if (!kind) return;
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        setDropTarget({ kind: "end" });
-      }}
-      onDragLeave={() => {
-        setDropTarget((prev) => (prev?.kind === "end" ? null : prev));
-      }}
-      onDrop={(e) => {
-        if (isSubmitting) return;
-        const kind = readDragKind(e);
-        if (!kind) return;
-        e.preventDefault();
-        // Clear both drop highlight and active drag so the source row stops rendering as "dragging".
-        setDropTarget(null);
-        setDragState(null);
-        if (kind === "bar") {
-          handleBarDropAt(totalRows);
-          return;
-        }
-        const raw =
-          e.dataTransfer.getData(DRAFT_DND_TYPE) ||
-          e.dataTransfer.getData("text/plain");
-        const fromIndex = Number.parseInt(raw, 10);
-        if (!Number.isFinite(fromIndex)) return;
-        handleExerciseAppend(fromIndex);
-      }}
     />
   );
 }

@@ -628,6 +628,44 @@ body {
   background: rgba(255, 255, 255, 0.03);
   min-height: 46px;
   transition: border-color 0.22s ease, box-shadow 0.22s ease, opacity 0.2s ease;
+  /* Pointer-drag on the whole row: prevent native text selection / iOS callout so a
+     long-press / press-and-move doesn't get reinterpreted as "select text". */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  cursor: grab;
+}
+
+.exerciseRow:active {
+  cursor: grabbing;
+}
+
+/* Composer row hosts form inputs only (no drag source) — restore default affordances. */
+.exerciseRow--composer {
+  cursor: auto;
+}
+
+.exerciseRow--composer:active {
+  cursor: auto;
+}
+
+/* Text inputs inside draggable rows keep normal text selection + caret. */
+.exerciseRow input,
+.exerciseRow textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+/* While a pointer drag is active, block touch scrolling so our pointermove handler
+   can freely resolve drop zones without the browser hijacking the gesture. */
+body.is-pointer-dragging {
+  touch-action: none;
+  cursor: grabbing;
+}
+
+body.is-pointer-dragging * {
+  cursor: grabbing !important;
 }
 
 .exerciseRow--dragOver {
@@ -664,6 +702,9 @@ body {
   box-shadow: 0 0 0 1px rgba(120, 200, 255, 0.15), 0 4px 18px rgba(80, 160, 240, 0.12);
   min-height: 44px;
   cursor: grab;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
@@ -1242,6 +1283,21 @@ body {
   animation: pickSheetSlideUp 240ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+/* Centered dialog variant: used for forms with text inputs (e.g. "Add custom exercise") so the
+   mobile soft keyboard doesn't cover the field like it does on the bottom-sheet layout. */
+.pickList-root--centered {
+  align-items: flex-start;
+  padding: max(8vh, 24px) 16px 16px;
+}
+
+.pickList-panel--dialog {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: min(80vh, 520px);
+  border-radius: 16px;
+  animation: pickListFadeIn 180ms ease-out;
+}
+
 .pickList-panel--popover {
   flex-direction: column;
   border-radius: 14px;
@@ -1326,7 +1382,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .pickList-backdrop,
   .pickList-panel--sheet,
-  .pickList-panel--popover {
+  .pickList-panel--popover,
+  .pickList-panel--dialog {
     animation: none;
   }
 }
