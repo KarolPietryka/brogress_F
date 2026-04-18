@@ -870,16 +870,23 @@ body.is-pointer-dragging * {
   gap: 8px;
 }
 
-/* Draft rows (wide): muscle tag uses slack in the name cell; exercise name keeps ellipsis. */
+/* Draft rows (wide): stack the muscle tag on top and the exercise name below it. */
+.exerciseRow:not(.exerciseRow--composer) .exerciseNameCell {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .muscleTag {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  align-self: flex-start;
   min-width: 0;
-  max-width: 68%;
+  max-width: 100%;
 }
 
 /* Draft list only: inset exercise title so it does not hug the cell corner (composer sticky unchanged). */
 .exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .check-text {
-  flex: 1 1 0;
+  flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
