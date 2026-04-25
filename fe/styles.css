@@ -191,6 +191,33 @@ body {
   overflow: hidden;
 }
 
+/* Coverflow uses translateZ; a parent with overflow:hidden clips 3D slides to empty (invisible). */
+.panel--withCarousel {
+  overflow: visible;
+}
+
+.panel--withCarousel .home-pick-swiper {
+  color: var(--text);
+  /* Belt-and-suspenders: Swiper’s default 100% height on wrapper/slide often resolves to 0 on min-height parents. */
+}
+.panel--withCarousel .home-pick-swiper .swiper-wrapper,
+.panel--withCarousel .home-pick-swiper .swiper-slide {
+  height: auto;
+  min-height: 0;
+}
+.panel--withCarousel .home-pick-swiper__tile {
+  border-radius: var(--radius2);
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 18px 12px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--text);
+}
+
 .panel-head {
   padding: 16px 16px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
