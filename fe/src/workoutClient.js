@@ -90,4 +90,12 @@ export class WorkoutClient {
       headers: this.#headers(false),
     }).then((r) => this.#withAuth(r));
   }
+
+  /** GET /workout/recent-plan-templates — distinct past plans by exercise sequence (excludes today). */
+  getRecentPlanTemplates() {
+    return fetch(`${WORKOUT_API_BASE}/workout/recent-plan-templates`, {
+      method: "GET",
+      headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
+  }
 }

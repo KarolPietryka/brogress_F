@@ -13,8 +13,29 @@ import {
 } from "./workoutHelpers.js";
 import { GraphPanel } from "./GraphPanel.jsx";
 import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
+import { WorkoutEditor } from "./WorkoutEditor.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
 
+function calendarTodayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** True when GET /workout already contains today — e.g. after autosave or stale server row while local id is missing. */
+function listHasWorkoutForToday(items) {
+  const ymd = calendarTodayYmd();
+  return items.some((it) => String(it.workoutDate).slice(0, 10) === ymd);
+}
+
+/**
+ * Three views share one shell:
+ *   "today"   — inline {@link WorkoutEditor} for the current day's workout (default after login).
+ *   "history" — summary list; clicking a row opens {@link WorkoutModal} with that workout.
+ *   "chart"   — aggregate volume chart.
+ *
+ * Today and the History popup hold independent draft/meta/editingWorkout state so edits to an
+ * older workout inside the popup don't clobber whatever the user is composing for today.
+ */
 export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   const workoutClient = useMemo(
     () =>
@@ -25,23 +46,37 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     [authToken, onAuthLost]
   );
 
-  const openModalInFlight = useRef(false);
-  /** Flips to true on the first successful drop-induced PUT so {@link closeModal} knows to refresh the summary list. */
-  const draftDirtyRef = useRef(false);
-  /** When set, modal submit calls PUT /workout/{id} instead of POST /workout (today). */
-  const [editingWorkout, setEditingWorkout] = useState(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [draftLines, setDraftLines] = useState([]);
-  const [exerciseMeta, setExerciseMeta] = useState(() => ({}));
+  /** Which top-level view is visible. Changes are user-driven (header tabs) or implicit on mount. */
+  const [view, setView] = useState("today");
+
+  // --- Today state ---------------------------------------------------------
+  // Prefill fires once per mount (per login); subsequent interactions just mutate the draft.
+  const todayPrefillInFlightRef = useRef(false);
+  const [todayDraftLines, setTodayDraftLines] = useState([]);
+  const [todayExerciseMeta, setTodayExerciseMeta] = useState(() => ({}));
+  const [todayEditingWorkout, setTodayEditingWorkout] = useState(null);
+  const [todaySubmitError, setTodaySubmitError] = useState("");
+  /** Flips to true on first persisted drop so switching to History refreshes the list. */
+  const todayDirtyRef = useRef(false);
+
+  // --- History popup state -------------------------------------------------
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [historyDraftLines, setHistoryDraftLines] = useState([]);
+  const [historyExerciseMeta, setHistoryExerciseMeta] = useState(() => ({}));
+  const [historyEditingWorkout, setHistoryEditingWorkout] = useState(null);
+  const [historySubmitError, setHistorySubmitError] = useState("");
+  const historyDirtyRef = useRef(false);
+
+  // --- Summary list & chart -----------------------------------------------
   const [templateItems, setTemplateItems] = useState([]);
   const [templateLoadError, setTemplateLoadError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [graphShellOpen, setGraphShellOpen] = useState(false);
   const [graphVolumePoints, setGraphVolumePoints] = useState([]);
   const [graphVolumeError, setGraphVolumeError] = useState("");
   const [graphVolumeLoading, setGraphVolumeLoading] = useState(false);
   const [graphReloadTrigger, setGraphReloadTrigger] = useState(0);
+
+  const [planTemplates, setPlanTemplates] = useState([]);
+  const [planTemplatesError, setPlanTemplatesError] = useState("");
 
   const refreshWorkoutsFromServer = useCallback(async () => {
     const woRes = await workoutClient.getWorkouts();
@@ -73,6 +108,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }, [workoutClient]);
 
   useEffect(() => {
+    // Initial summary fetch: needed so History view has data the moment the user switches.
     let cancelled = false;
     (async () => {
       try {
@@ -91,7 +127,64 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }, [refreshWorkoutsFromServer]);
 
   useEffect(() => {
-    if (!graphShellOpen) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await workoutClient.getRecentPlanTemplates();
+        if (!res.ok) {
+          const text = await res.text().catch(() => "");
+          if (!cancelled) {
+            setPlanTemplatesError(text || `HTTP ${res.status}`);
+            setPlanTemplates([]);
+          }
+          return;
+        }
+        const data = await res.json();
+        if (!cancelled) {
+          setPlanTemplates(Array.isArray(data) ? data : []);
+          setPlanTemplatesError("");
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setPlanTemplatesError(e instanceof Error ? e.message : "unknown error");
+          setPlanTemplates([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workoutClient]);
+
+  useEffect(() => {
+    // Today editor seed: fetch the prefill once per mount so the user lands straight into the
+    // current day's draft (no "Add exercise" click, no popup). Failures fall back to an empty draft.
+    //
+    // The {@code todayPrefillInFlightRef} guard (ref survives StrictMode's simulated
+    // unmount/remount in dev) prevents a duplicate request. We intentionally do NOT use a
+    // {@code cancelled} flag here — it would race with the ref under StrictMode: the first
+    // effect's cleanup would flip the flag and drop the in-flight response, while the second
+    // effect would skip the refetch because the ref is already set.
+    if (todayPrefillInFlightRef.current) return;
+    todayPrefillInFlightRef.current = true;
+    (async () => {
+      try {
+        const res = await workoutClient.prefillWorkout();
+        if (!res.ok) return;
+        const data = await res.json();
+        const { draftLines, exerciseMeta } = mapPrefillToDraft(data);
+        setTodayDraftLines(draftLines);
+        setTodayExerciseMeta(exerciseMeta);
+      } catch {
+        /* Keep the empty draft; Today view will just show the composer. */
+      }
+    })();
+  }, [workoutClient]);
+
+  useEffect(() => {
+    // Chart data is fetched lazily — only when the chart view is active — and re-fetched whenever
+    // a modal persist flips the reload trigger so the chart stays in sync with the list.
+    if (view !== "chart") return undefined;
     let cancelled = false;
     setGraphVolumeLoading(true);
     setGraphVolumeError("");
@@ -120,88 +213,24 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     return () => {
       cancelled = true;
     };
-  }, [graphShellOpen, graphReloadTrigger, workoutClient]);
-
-  async function openModal() {
-    if (openModalInFlight.current) return;
-    openModalInFlight.current = true;
-    setIsSubmitting(false);
-    setSubmitError("");
-
-    let prefillDraft = [];
-    let prefillMeta = {};
-    try {
-      const res = await workoutClient.prefillWorkout();
-      if (res.ok) {
-        const data = await res.json();
-        ({ draftLines: prefillDraft, exerciseMeta: prefillMeta } = mapPrefillToDraft(data));
-      }
-    } catch {
-      /* keep empty draft */
-    } finally {
-      openModalInFlight.current = false;
-    }
-
-    setDraftLines(prefillDraft);
-    setExerciseMeta(prefillMeta);
-    setEditingWorkout(null);
-    setIsOpen(true);
-  }
-
-  function openModalForSummaryItem(mappedItem) {
-    if (openModalInFlight.current) return;
-    setIsSubmitting(false);
-    setSubmitError("");
-    // Fresh edit session → clear any previous "dirty" flag so opening-and-closing without drops won't refetch.
-    draftDirtyRef.current = false;
-    const { draftLines: d, exerciseMeta: m } = mapSummaryItemToDraft(mappedItem);
-    setDraftLines(d);
-    setExerciseMeta(m);
-    setEditingWorkout({
-      id: mappedItem.id,
-      dateLabel: formatWorkoutDate(mappedItem.workoutDate),
-    });
-    setIsOpen(true);
-  }
-
-  function closeModal() {
-    // Remember intent before clearing state: if any drop persisted, summary list is stale and must reload.
-    const shouldRefreshSummary = draftDirtyRef.current;
-    draftDirtyRef.current = false;
-    setIsOpen(false);
-    setIsSubmitting(false);
-    setSubmitError("");
-    setEditingWorkout(null);
-    if (shouldRefreshSummary) {
-      // Fire-and-forget; a transient fetch error surfaces via templateLoadError without blocking close.
-      refreshWorkoutsFromServer().catch((e) => {
-        setTemplateLoadError(
-          `Zmiany zapisane, ale lista nie odświeżyła się (${e instanceof Error ? e.message : "unknown error"}).`
-        );
-      });
-      if (graphShellOpen) {
-        setGraphReloadTrigger((v) => v + 1);
-      }
-    }
-  }
+  }, [view, graphReloadTrigger, workoutClient]);
 
   /**
    * Builds a {@link WorkoutSubmitRequest} from the given draft lines.
    *
-   * The optional {@code metaOverride} lets callers that just mutated state (add/remove) hand in the
-   * freshly computed meta map — otherwise we'd read a stale closure here and lose the new row's
-   * weight/reps on the first autosave request.
+   * Requires {@code meta} (not the closed-over state) so callers that just mutated their meta map
+   * (add/remove) can hand in the fresh snapshot without races.
    */
-  function buildSubmitRequestFromLines(lines, metaOverride) {
-    const meta = metaOverride || exerciseMeta;
+  function buildSubmitRequestFromLines(lines, meta) {
     const request = new WorkoutSubmitRequest();
     request.exercises = lines.map((line) => {
       const row = new WorkoutExercise();
       row.bodyPartName = BODY_PART_API_NAME[line.group] || String(line.group).toLowerCase();
       row.name = line.name;
       row.exerciseId = line.exerciseId != null ? line.exerciseId : null;
-      row.weight = parseWeightForApi(meta[line.id]?.weight);
-      row.reps = parseRepsIntForApi(meta[line.id]?.reps || "");
+      const metaRow = meta?.[line.id];
+      row.weight = parseWeightForApi(metaRow?.weight);
+      row.reps = parseRepsIntForApi(metaRow?.reps || "");
       row.status = line.status ?? "PLANNED";
       return row;
     });
@@ -209,61 +238,144 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }
 
   /**
-   * Autosave: every structural change inside the modal (drop, add, remove) snapshots the workout to the server.
-   *
-   * Mode routing:
-   *   - edit mode  (editingWorkout set) → PUT /workout/{id}
-   *   - compose mode (no editingWorkout) → POST /workout on the first call, then transition to edit mode
-   *     using the returned id so subsequent calls become PUTs instead of repeatedly replacing today's rows.
-   *
-   * Persists are best-effort snapshots (no reps/weight validation) — kept that way so interim states don't
-   * block the UI. Surface failures via {@link submitError} without rolling back local state.
+   * Shared persist pipeline: POST when no workout exists yet, PUT when one does. The channel
+   * passed in decides which set of state setters to update (Today vs History popup) so the two
+   * editors never race or overwrite each other's editing target.
    */
-  const persistDraftAfterDrop = useCallback(
-    (nextLines, nextMeta) => {
+  const persistDraft = useCallback(
+    (channel, nextLines, nextMetaArg) => {
       if (!Array.isArray(nextLines)) return;
       // Empty draft → nothing to create, and wiping an existing workout is out of scope of autosave.
       if (nextLines.length === 0) return;
 
+      const isToday = channel === "today";
+      const editing = isToday ? todayEditingWorkout : historyEditingWorkout;
+      const nextMeta = nextMetaArg || (isToday ? todayExerciseMeta : historyExerciseMeta);
+
       const request = buildSubmitRequestFromLines(nextLines, nextMeta);
 
-      // Fire-and-forget on purpose — don't block the UI; surface errors via a non-blocking state update.
       (async () => {
         try {
-          const res = editingWorkout
-            ? await workoutClient.putWorkout(editingWorkout.id, request)
+          const res = editing
+            ? await workoutClient.putWorkout(editing.id, request)
             : await workoutClient.postWorkouts(request);
           if (!res.ok) {
             const text = await res.text().catch(() => "");
             throw new Error(text || `HTTP ${res.status}`);
           }
 
-          // Compose → edit transition: pick up the created workout's id so the next autosave PUTs instead
-          // of POSTing again (BE would otherwise delete+replace today's sets on each call).
-          if (!editingWorkout) {
+          // Compose → edit transition: pick up the created workout's id so the next autosave PUTs
+          // instead of POSTing again (BE would otherwise delete+replace today's sets every call).
+          if (!editing) {
             const created = await res.json().catch(() => null);
             if (created?.id != null) {
-              setEditingWorkout({
+              const target = {
                 id: created.id,
                 dateLabel: formatWorkoutDate(created.workoutDate),
-              });
+              };
+              if (isToday) setTodayEditingWorkout(target);
+              else setHistoryEditingWorkout(target);
             }
           }
 
-          // Mark the session as dirty so closing the modal triggers a summary-list refresh.
-          draftDirtyRef.current = true;
-          setSubmitError("");
+          if (isToday) {
+            todayDirtyRef.current = true;
+            setTodaySubmitError("");
+          } else {
+            historyDirtyRef.current = true;
+            setHistorySubmitError("");
+          }
         } catch (e) {
-          setSubmitError(
-            `Nie udało się zapisać zmian (${e instanceof Error ? e.message : "unknown error"}).`
-          );
+          const msg = `Nie udało się zapisać zmian (${e instanceof Error ? e.message : "unknown error"}).`;
+          if (isToday) setTodaySubmitError(msg);
+          else setHistorySubmitError(msg);
         }
       })();
     },
-    // buildSubmitRequestFromLines is closed over exerciseMeta/editingWorkout — list both so stale closures don't slip in.
+    // Explicit deps so stale closures don't slip in; build helper is pure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editingWorkout, workoutClient, exerciseMeta]
+    [todayEditingWorkout, historyEditingWorkout, todayExerciseMeta, historyExerciseMeta, workoutClient]
   );
+
+  const persistTodayDraft = useCallback(
+    (nextLines, nextMeta) => persistDraft("today", nextLines, nextMeta),
+    [persistDraft]
+  );
+
+  const persistHistoryDraft = useCallback(
+    (nextLines, nextMeta) => persistDraft("history", nextLines, nextMeta),
+    [persistDraft]
+  );
+
+  const applyPlanFromCarousel = useCallback((plan) => {
+    const { draftLines, exerciseMeta } = mapPrefillToDraft({ bodyPart: plan?.bodyPart });
+    setTodayDraftLines(draftLines);
+    setTodayExerciseMeta(exerciseMeta);
+  }, []);
+
+  const showPlanCarouselUi = useMemo(
+    () => !todayEditingWorkout && !listHasWorkoutForToday(templateItems),
+    [todayEditingWorkout, templateItems]
+  );
+
+  function openHistoryModal(mappedItem) {
+    // Fresh edit session → clear any previous "dirty" flag so opening-and-closing without drops
+    // won't refetch the summary.
+    historyDirtyRef.current = false;
+    setHistorySubmitError("");
+    const { draftLines, exerciseMeta } = mapSummaryItemToDraft(mappedItem);
+    setHistoryDraftLines(draftLines);
+    setHistoryExerciseMeta(exerciseMeta);
+    setHistoryEditingWorkout({
+      id: mappedItem.id,
+      dateLabel: formatWorkoutDate(mappedItem.workoutDate),
+    });
+    setIsHistoryModalOpen(true);
+  }
+
+  function closeHistoryModal() {
+    // Remember intent before clearing state: if any drop persisted, summary list is stale.
+    const shouldRefresh = historyDirtyRef.current;
+    historyDirtyRef.current = false;
+    setIsHistoryModalOpen(false);
+    setHistoryEditingWorkout(null);
+    setHistoryDraftLines([]);
+    setHistoryExerciseMeta({});
+    setHistorySubmitError("");
+    if (shouldRefresh) {
+      refreshWorkoutsFromServer().catch((e) => {
+        setTemplateLoadError(
+          `Zmiany zapisane, ale lista nie odświeżyła się (${e instanceof Error ? e.message : "unknown error"}).`
+        );
+      });
+      if (view === "chart") {
+        setGraphReloadTrigger((v) => v + 1);
+      }
+    }
+  }
+
+  function switchView(nextView) {
+    if (nextView === view) return;
+    // Entering History with a pending today-autosave in flight → refresh so the summary list
+    // reflects whatever Today just created/updated on the server.
+    if (nextView === "history" && todayDirtyRef.current) {
+      todayDirtyRef.current = false;
+      refreshWorkoutsFromServer().catch((e) => {
+        setTemplateLoadError(
+          `Zmiany zapisane, ale lista nie odświeżyła się (${e instanceof Error ? e.message : "unknown error"}).`
+        );
+      });
+    }
+    if (nextView === "chart" && todayDirtyRef.current) {
+      todayDirtyRef.current = false;
+      setGraphReloadTrigger((v) => v + 1);
+    }
+    setView(nextView);
+    if (import.meta.env.VITE_POSTHOG_KEY) {
+      // Session replay often replays SVG charts (Recharts) poorly; this event marks the toggle in PostHog.
+      posthog.capture("brogress_shell_view", { view: nextView });
+    }
+  }
 
   return (
     <main className="app">
@@ -275,67 +387,91 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           </div>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            className={`btn${view === "today" ? " btn-toggle-on" : ""}`}
+            aria-pressed={view === "today"}
+            onClick={() => switchView("today")}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            className={`btn${view === "history" ? " btn-toggle-on" : ""}`}
+            aria-pressed={view === "history"}
+            onClick={() => switchView("history")}
+          >
+            History
+          </button>
+          <button
+            type="button"
+            className={`btn${view === "chart" ? " btn-toggle-on" : ""}`}
+            aria-pressed={view === "chart"}
+            aria-label={view === "chart" ? "Hide current series chart" : "Show current series chart"}
+            onClick={() => switchView("chart")}
+          >
+            Your Brogress
+          </button>
           {typeof onLogout === "function" ? (
             <button className="btn" type="button" onClick={onLogout}>
               Log out
             </button>
           ) : null}
-          <button
-            className={`btn${graphShellOpen ? " btn-toggle-on" : ""}`}
-            type="button"
-            aria-pressed={graphShellOpen}
-            aria-label={graphShellOpen ? "Back to workout list" : "Show current series chart"}
-            onClick={() =>
-              setGraphShellOpen((v) => {
-                const next = !v;
-                // Session replay often replays SVG charts (Recharts) poorly; this event marks the toggle in PostHog.
-                if (import.meta.env.VITE_POSTHOG_KEY) {
-                  posthog.capture("brogress_shell_view", {
-                    view: next ? "graph_series" : "workout_list",
-                  });
-                }
-                return next;
-              })
-            }
-          >
-            Your Brogress
-          </button>
-          <button className="btn primary" type="button" onClick={openModal}>
-            Add exercise
-          </button>
         </div>
       </header>
 
       <section className="content">
-        {graphShellOpen ? (
+        {view === "today" ? (
+          // Today card mirrors the popup's modal-card look so the editor body, sticky composer
+          // and list all behave identically — just without the backdrop / close button.
+          <div className="modal-card todayCard">
+            <WorkoutEditor
+              loadExercisePicker={loadExercisePicker}
+              createUserExercise={createUserExercise}
+              draftLines={todayDraftLines}
+              setDraftLines={setTodayDraftLines}
+              exerciseMeta={todayExerciseMeta}
+              setExerciseMeta={setTodayExerciseMeta}
+              isSubmitting={false}
+              submitError={todaySubmitError}
+              onDraftPersist={persistTodayDraft}
+              planCarouselTemplates={planTemplates}
+              planCarouselError={planTemplatesError}
+              showPlanCarousel={showPlanCarouselUi}
+              onApplyPlanCarousel={applyPlanFromCarousel}
+            />
+          </div>
+        ) : null}
+        {view === "history" ? (
+          <WorkoutListPanel
+            items={templateItems}
+            loadError={templateLoadError}
+            onSelectWorkout={openHistoryModal}
+          />
+        ) : null}
+        {view === "chart" ? (
           <GraphPanel
             volumePoints={graphVolumePoints}
             volumeError={graphVolumeError}
             volumeLoading={graphVolumeLoading}
           />
-        ) : (
-          <WorkoutListPanel
-            items={templateItems}
-            loadError={templateLoadError}
-            onSelectWorkout={openModalForSummaryItem}
-          />
-        )}
+        ) : null}
       </section>
 
-      {isOpen ? (
+      {isHistoryModalOpen ? (
         <WorkoutModal
           loadExercisePicker={loadExercisePicker}
           createUserExercise={createUserExercise}
-          draftLines={draftLines}
-          setDraftLines={setDraftLines}
-          exerciseMeta={exerciseMeta}
-          setExerciseMeta={setExerciseMeta}
-          isSubmitting={isSubmitting}
-          submitError={submitError}
-          onClose={closeModal}
-          onDraftPersist={persistDraftAfterDrop}
-          modalKicker={editingWorkout ? "Edit workout" : "Add workout"}
-          modalKickerDetail={editingWorkout?.dateLabel ?? ""}
+          draftLines={historyDraftLines}
+          setDraftLines={setHistoryDraftLines}
+          exerciseMeta={historyExerciseMeta}
+          setExerciseMeta={setHistoryExerciseMeta}
+          isSubmitting={false}
+          submitError={historySubmitError}
+          onClose={closeHistoryModal}
+          onDraftPersist={persistHistoryDraft}
+          modalKicker="Edit workout"
+          modalKickerDetail={historyEditingWorkout?.dateLabel ?? ""}
         />
       ) : null}
     </main>

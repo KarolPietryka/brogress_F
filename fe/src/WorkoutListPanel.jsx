@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { HomePickCarousel } from "./HomePickCarousel.jsx";
 import { formatWorkoutDate, rowStatusModifier } from "./workoutHelpers.js";
 
 /** Match .workoutRows breakpoints so one row matches visible column count. */
@@ -66,8 +65,7 @@ export function WorkoutListPanel({ items, loadError, onSelectWorkout }) {
   }
 
   return (
-    <div className="panel panel--withCarousel">
-      <HomePickCarousel />
+    <div className="panel">
       <div className="template" aria-live="polite">
         {loadError ? <div className="errorText">{loadError}</div> : null}
         {items.length === 0 && !loadError ? (
