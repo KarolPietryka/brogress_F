@@ -12,6 +12,7 @@ import {
   parseWeightForApi,
 } from "./workoutHelpers.js";
 import { GraphPanel } from "./GraphPanel.jsx";
+import { HomePickCarousel } from "./HomePickCarousel.jsx";
 import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
 import { WorkoutEditor } from "./WorkoutEditor.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
@@ -425,6 +426,9 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           // Today card mirrors the popup's modal-card look so the editor body, sticky composer
           // and list all behave identically — just without the backdrop / close button.
           <div className="modal-card todayCard">
+            <div className="todayCard__carousel">
+              <HomePickCarousel />
+            </div>
             <WorkoutEditor
               loadExercisePicker={loadExercisePicker}
               createUserExercise={createUserExercise}
