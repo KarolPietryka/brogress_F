@@ -268,6 +268,39 @@ export function mapPrefillToDraft(prefill) {
 }
 
 /**
+ * Content-only draft fingerprint (ignores per-mount row {@code id}s) for PRD *clean* vs *dirty* prefill
+ * and plan-carousel visibility. Same exercise order, names, status, and meta = same string.
+ */
+export function planDraftSignature(lines, exerciseMeta) {
+  if (!Array.isArray(lines)) {
+    return "[]";
+  }
+  const body = lines.map((l) => {
+    const m = exerciseMeta?.[l.id] || {};
+    return {
+      g: l.group,
+      n: l.name,
+      eid: l.exerciseId ?? null,
+      st: normalizeExerciseStatus(l),
+      w: m.weight == null || m.weight === "" ? "0" : String(m.weight).trim(),
+      r: m.reps == null || m.reps === "" ? "" : String(m.reps).trim(),
+    };
+  });
+  return JSON.stringify(body);
+}
+
+/**
+ * Keeps only {@code GET /workout/recent-plan-templates} rows that carry an editor-ready snapshot.
+ * Slides are BE entries with embedded {@code bodyPart}; swipe applies {@link mapPrefillToDraft} locally (no extra fetch).
+ */
+export function filterRecentPlanTemplatesWithSnapshots(templates) {
+  if (!Array.isArray(templates)) return [];
+  return templates.filter(
+    (t) => t && Array.isArray(t.bodyPart) && t.bodyPart.length > 0
+  );
+}
+
+/**
  * Builds modal draft state from a {@link mapServerWorkout} list item (summary card).
  */
 export function mapSummaryItemToDraft(mappedItem) {

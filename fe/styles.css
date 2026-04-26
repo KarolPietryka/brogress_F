@@ -195,34 +195,6 @@ body {
   overflow: hidden;
 }
 
-/* Home pick carousel: sits above WorkoutEditor on the Today view (.todayCard__carousel). */
-.todayCard__carousel {
-  flex: 0 0 auto;
-  overflow: visible;
-  padding: 10px 8px 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.todayCard__carousel .home-pick-swiper {
-  color: var(--text);
-}
-.todayCard__carousel .home-pick-swiper .swiper-wrapper,
-.todayCard__carousel .home-pick-swiper .swiper-slide {
-  height: auto;
-  min-height: 0;
-}
-.todayCard__carousel .home-pick-swiper__tile {
-  border-radius: var(--radius2);
-  border: 1px solid var(--line);
-  background: rgba(0, 0, 0, 0.28);
-  padding: 18px 12px;
-  min-height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  color: var(--text);
-}
-
 .panel-head {
   padding: 16px 16px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -495,6 +467,118 @@ body {
   margin: 0 auto;
   /* Ensure the editor (modal-body) still consumes remaining height after the top carousel. */
   min-height: 0;
+}
+
+/* Plans from history (PlanTemplateCarousel): same visual model as the old HomePick dummy — real tiles + nav arrows. */
+.planCarousel {
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 0 4px;
+  margin: 0 0 2px;
+}
+
+.planCarousel__kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 207, 90, 0.85);
+  margin: 0 0 8px 2px;
+}
+
+.planCarousel--error {
+  padding: 12px 14px;
+  border-radius: var(--radius2, 12px);
+  border: 1px solid rgba(255, 100, 100, 0.35);
+  background: rgba(40, 0, 0, 0.35);
+  color: rgba(255, 220, 220, 0.95);
+  font-size: 14px;
+}
+
+.planCarousel__inner {
+  position: relative;
+  width: 100%;
+  padding: 6px 44px 8px;
+  box-sizing: border-box;
+}
+
+.planCarousel__swiper {
+  color: var(--text);
+  width: 100%;
+  overflow: visible;
+}
+
+.planCarousel__swiper .swiper-wrapper,
+.planCarousel__swiper .swiper-slide {
+  height: auto;
+  min-height: 0;
+}
+
+/* Arrow buttons: visible on the dark card chrome */
+.planCarousel__swiper .swiper-button-next,
+.planCarousel__swiper .swiper-button-prev {
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  margin-top: 0;
+  transform: translateY(-50%);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+}
+.planCarousel__swiper .swiper-button-next::after,
+.planCarousel__swiper .swiper-button-prev::after {
+  font-size: 15px;
+  font-weight: 700;
+}
+.planCarousel__swiper .swiper-button-disabled {
+  opacity: 0.3;
+  pointer-events: none;
+}
+.planCarousel__swiper .swiper-button-next {
+  right: 0;
+}
+.planCarousel__swiper .swiper-button-prev {
+  left: 0;
+}
+
+.planCarousel__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 72px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 14px;
+  border-radius: var(--radius2, 12px);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  background: rgba(0, 0, 0, 0.32);
+  text-align: center;
+}
+
+.planCarousel__tileDate {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.planCarousel__tileSub {
+  font-size: 12px;
+  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.6);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .modal-foot {

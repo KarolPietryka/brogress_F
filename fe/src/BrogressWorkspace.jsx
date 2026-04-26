@@ -6,27 +6,16 @@ import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js
 import {
   mapServerWorkout,
   mapPrefillToDraft,
+  filterRecentPlanTemplatesWithSnapshots,
   mapSummaryItemToDraft,
   formatWorkoutDate,
   parseRepsIntForApi,
   parseWeightForApi,
 } from "./workoutHelpers.js";
 import { GraphPanel } from "./GraphPanel.jsx";
-import { HomePickCarousel } from "./HomePickCarousel.jsx";
 import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
 import { WorkoutEditor } from "./WorkoutEditor.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
-
-function calendarTodayYmd() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** True when GET /workout already contains today — e.g. after autosave or stale server row while local id is missing. */
-function listHasWorkoutForToday(items) {
-  const ymd = calendarTodayYmd();
-  return items.some((it) => String(it.workoutDate).slice(0, 10) === ymd);
-}
 
 /**
  * Three views share one shell:
@@ -142,7 +131,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
         }
         const data = await res.json();
         if (!cancelled) {
-          setPlanTemplates(Array.isArray(data) ? data : []);
+          setPlanTemplates(filterRecentPlanTemplatesWithSnapshots(Array.isArray(data) ? data : []));
           setPlanTemplatesError("");
         }
       } catch (e) {
@@ -308,15 +297,23 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     [persistDraft]
   );
 
+  /** Carousel swipe: in-memory {@code bodyPart} from list payload only — no prefill HTTP. */
   const applyPlanFromCarousel = useCallback((plan) => {
     const { draftLines, exerciseMeta } = mapPrefillToDraft({ bodyPart: plan?.bodyPart });
     setTodayDraftLines(draftLines);
     setTodayExerciseMeta(exerciseMeta);
   }, []);
 
+  /**
+   * Show the strip whenever the list endpoint returned data or an error (nothing to show if [] and no error).
+   * PRD *clean/dirty* hiding was too fragile (signature drift vs prefill/autosave) and hid the carousel entirely.
+   * Swipe still replaces the draft — user can use “Wyczyść prefill” before picking another plan if needed.
+   */
   const showPlanCarouselUi = useMemo(
-    () => !todayEditingWorkout && !listHasWorkoutForToday(templateItems),
-    [todayEditingWorkout, templateItems]
+    () =>
+      Boolean(planTemplatesError) ||
+      (Array.isArray(planTemplates) && planTemplates.length > 0),
+    [planTemplates, planTemplatesError]
   );
 
   function openHistoryModal(mappedItem) {
@@ -426,9 +423,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           // Today card mirrors the popup's modal-card look so the editor body, sticky composer
           // and list all behave identically — just without the backdrop / close button.
           <div className="modal-card todayCard">
-            <div className="todayCard__carousel">
-              <HomePickCarousel />
-            </div>
             <WorkoutEditor
               loadExercisePicker={loadExercisePicker}
               createUserExercise={createUserExercise}
