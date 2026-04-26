@@ -49,6 +49,15 @@ export class WorkoutClient {
     }).then((r) => this.#withAuth(r));
   }
 
+  /** DELETE /workout/{id} — only today’s workout for the current user; 204 No Content. */
+  deleteWorkout(workoutId) {
+    const url = `${WORKOUT_API_BASE}/workout/${encodeURIComponent(String(workoutId))}`;
+    return fetch(url, {
+      method: "DELETE",
+      headers: this.#headers(false),
+    }).then((r) => this.#withAuth(r));
+  }
+
   /**
    * GET /workout/exercises/picker?bodyPart= — { catalog: [{id,name}], custom: [{id,name}] }.
    */

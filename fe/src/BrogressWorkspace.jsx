@@ -17,6 +17,24 @@ import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
 import { WorkoutEditor } from "./WorkoutEditor.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
 
+function calendarTodayYmd() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** True when {@code GET /workout} summary list already has a row for the calendar “today” (YMD prefix match on {@code workoutDate}). */
+function listHasWorkoutForToday(items) {
+  const ymd = calendarTodayYmd();
+  return items.some((it) => String(it.workoutDate).slice(0, 10) === ymd);
+}
+
+/** Server id for today’s workout row (for delete), or null — use when prefill loaded an existing today session but {@code todayEditingWorkout} was never set. */
+function todayWorkoutIdFromSummaryList(items) {
+  const ymd = calendarTodayYmd();
+  const row = Array.isArray(items) ? items.find((it) => String(it.workoutDate).slice(0, 10) === ymd) : null;
+  return row?.id != null ? row.id : null;
+}
+
 /**
  * Three views share one shell:
  *   "today"   — inline {@link WorkoutEditor} for the current day's workout (default after login).
@@ -79,6 +97,24 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     setTemplateLoadError("");
   }, [workoutClient]);
 
+  const loadPlanTemplates = useCallback(async () => {
+    try {
+      const res = await workoutClient.getRecentPlanTemplates();
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        setPlanTemplatesError(text || `HTTP ${res.status}`);
+        setPlanTemplates([]);
+        return;
+      }
+      const data = await res.json();
+      setPlanTemplates(filterRecentPlanTemplatesWithSnapshots(Array.isArray(data) ? data : []));
+      setPlanTemplatesError("");
+    } catch (e) {
+      setPlanTemplatesError(e instanceof Error ? e.message : "unknown error");
+      setPlanTemplates([]);
+    }
+  }, [workoutClient]);
+
   const loadExercisePicker = useCallback(async (bodyPart) => {
     const res = await workoutClient.getExercisePicker(bodyPart);
     if (!res.ok) {
@@ -117,34 +153,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }, [refreshWorkoutsFromServer]);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await workoutClient.getRecentPlanTemplates();
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          if (!cancelled) {
-            setPlanTemplatesError(text || `HTTP ${res.status}`);
-            setPlanTemplates([]);
-          }
-          return;
-        }
-        const data = await res.json();
-        if (!cancelled) {
-          setPlanTemplates(filterRecentPlanTemplatesWithSnapshots(Array.isArray(data) ? data : []));
-          setPlanTemplatesError("");
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setPlanTemplatesError(e instanceof Error ? e.message : "unknown error");
-          setPlanTemplates([]);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [workoutClient]);
+    void loadPlanTemplates();
+  }, [loadPlanTemplates]);
 
   useEffect(() => {
     // Today editor seed: fetch the prefill once per mount so the user lands straight into the
@@ -265,6 +275,9 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
               };
               if (isToday) setTodayEditingWorkout(target);
               else setHistoryEditingWorkout(target);
+              if (isToday) {
+                refreshWorkoutsFromServer().catch(() => {});
+              }
             }
           }
 
@@ -284,7 +297,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     },
     // Explicit deps so stale closures don't slip in; build helper is pure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todayEditingWorkout, historyEditingWorkout, todayExerciseMeta, historyExerciseMeta, workoutClient]
+    [todayEditingWorkout, historyEditingWorkout, todayExerciseMeta, historyExerciseMeta, workoutClient, refreshWorkoutsFromServer]
   );
 
   const persistTodayDraft = useCallback(
@@ -304,17 +317,58 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     setTodayExerciseMeta(exerciseMeta);
   }, []);
 
+  const todayPersistedWorkoutId = useMemo(() => {
+    if (todayEditingWorkout?.id != null) return todayEditingWorkout.id;
+    return todayWorkoutIdFromSummaryList(templateItems);
+  }, [todayEditingWorkout, templateItems]);
+
+  const handleDeleteTodaysWorkout = useCallback(async () => {
+    const id = todayPersistedWorkoutId;
+    if (id == null) return;
+    setTodaySubmitError("");
+    const res = await workoutClient.deleteWorkout(id);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      setTodaySubmitError(text || `Nie udało się usunąć treningu (HTTP ${res.status}).`);
+      return;
+    }
+    setTodayEditingWorkout(null);
+    try {
+      await refreshWorkoutsFromServer();
+    } catch (e) {
+      setTemplateLoadError(
+        `Nie udało się odświeżyć listy (${e instanceof Error ? e.message : "unknown error"}).`
+      );
+    }
+    try {
+      const preRes = await workoutClient.prefillWorkout();
+      if (preRes.ok) {
+        const data = await preRes.json();
+        const mapped = mapPrefillToDraft(data);
+        setTodayDraftLines(mapped.draftLines);
+        setTodayExerciseMeta(mapped.exerciseMeta);
+      } else {
+        setTodayDraftLines([]);
+        setTodayExerciseMeta({});
+      }
+    } catch {
+      setTodayDraftLines([]);
+      setTodayExerciseMeta({});
+    }
+    await loadPlanTemplates();
+  }, [todayPersistedWorkoutId, workoutClient, refreshWorkoutsFromServer, loadPlanTemplates]);
+
   /**
-   * Show the strip whenever the list endpoint returned data or an error (nothing to show if [] and no error).
-   * PRD *clean/dirty* hiding was too fragile (signature drift vs prefill/autosave) and hid the carousel entirely.
-   * Swipe still replaces the draft — user can use “Wyczyść prefill” before picking another plan if needed.
+   * Plans-from-history strip: only when there is **no** persisted workout for today in {@code templateItems} (same
+   * source as History). If today’s row exists — user is already in “today’s session” — the carousel is hidden.
+   * Still show the template error strip if the list call failed, **unless** today already has a workout (then nothing).
    */
-  const showPlanCarouselUi = useMemo(
-    () =>
-      Boolean(planTemplatesError) ||
-      (Array.isArray(planTemplates) && planTemplates.length > 0),
-    [planTemplates, planTemplatesError]
-  );
+  const showPlanCarouselUi = useMemo(() => {
+    if (listHasWorkoutForToday(templateItems)) return false;
+    return (
+      Boolean(planTemplatesError) || (Array.isArray(planTemplates) && planTemplates.length > 0)
+    );
+  }, [planTemplates, planTemplatesError, templateItems]);
 
   function openHistoryModal(mappedItem) {
     // Fresh edit session → clear any previous "dirty" flag so opening-and-closing without drops
@@ -437,6 +491,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
               planCarouselError={planTemplatesError}
               showPlanCarousel={showPlanCarouselUi}
               onApplyPlanCarousel={applyPlanFromCarousel}
+              showTodaysWorkoutDelete={todayPersistedWorkoutId != null}
+              onDeleteTodaysWorkoutRequest={handleDeleteTodaysWorkout}
             />
           </div>
         ) : null}

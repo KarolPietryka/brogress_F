@@ -62,6 +62,8 @@ export function WorkoutEditor({
   planCarouselError,
   showPlanCarousel,
   onApplyPlanCarousel,
+  showTodaysWorkoutDelete,
+  onDeleteTodaysWorkoutRequest,
 }) {
   const [composerGroup, setComposerGroup] = useState(() => MUSCLE_GROUPS[0] || "");
   const [composerExercise, setComposerExercise] = useState("");
@@ -80,6 +82,8 @@ export function WorkoutEditor({
   const [composerPickOpen, setComposerPickOpen] = useState(null);
   /** Blue glow on the top composer row after + */
   const [composerRowFlash, setComposerRowFlash] = useState(false);
+  const [deleteWorkoutDialogOpen, setDeleteWorkoutDialogOpen] = useState(false);
+  const [deleteWorkoutSubmitting, setDeleteWorkoutSubmitting] = useState(false);
   const groupPickAnchorRef = useRef(null);
   const exercisePickAnchorRef = useRef(null);
   /**
@@ -220,6 +224,11 @@ export function WorkoutEditor({
         if (!addCustomSubmitting) setAddCustomOpen(false);
         return;
       }
+      if (deleteWorkoutDialogOpen) {
+        e.preventDefault();
+        if (!deleteWorkoutSubmitting) setDeleteWorkoutDialogOpen(false);
+        return;
+      }
       if (composerPickOpen) {
         e.preventDefault();
         setComposerPickOpen(null);
@@ -231,7 +240,7 @@ export function WorkoutEditor({
     return () => {
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [onEscape, composerPickOpen, addCustomOpen, addCustomSubmitting]);
+  }, [onEscape, composerPickOpen, addCustomOpen, addCustomSubmitting, deleteWorkoutDialogOpen, deleteWorkoutSubmitting]);
 
   useEffect(() => {
     // FLIP animations need to re-measure on scroll. Host always provides a scrollable container
@@ -426,11 +435,15 @@ export function WorkoutEditor({
     notifyPersist(nextLines, nextMeta);
   }
 
-  function clearEntireDraft() {
-    setDraftLines([]);
-    setExerciseMeta({});
-    setDropTarget(null);
-    setDragState(null);
+  async function confirmDeleteTodaysWorkout() {
+    if (typeof onDeleteTodaysWorkoutRequest !== "function") return;
+    setDeleteWorkoutSubmitting(true);
+    try {
+      await onDeleteTodaysWorkoutRequest();
+      setDeleteWorkoutDialogOpen(false);
+    } finally {
+      setDeleteWorkoutSubmitting(false);
+    }
   }
 
   /**
@@ -825,6 +838,56 @@ export function WorkoutEditor({
             document.body
           )
         : null}
+      {deleteWorkoutDialogOpen
+        ? createPortal(
+            <div className="pickList-root pickList-root--centered" role="presentation">
+              <button
+                type="button"
+                className="pickList-backdrop"
+                aria-label="Zamknij"
+                disabled={deleteWorkoutSubmitting}
+                onClick={() => !deleteWorkoutSubmitting && setDeleteWorkoutDialogOpen(false)}
+              />
+              <div
+                className="pickList-panel pickList-panel--dialog"
+                role="alertdialog"
+                aria-labelledby="deleteWorkoutTitle"
+                aria-describedby="deleteWorkoutDesc"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="pickList-header" id="deleteWorkoutTitle">
+                  Usunąć trening?
+                </div>
+                <div className="pickList-list" style={{ padding: "12px 16px 16px" }} id="deleteWorkoutDesc">
+                  <p style={{ margin: "0 0 14px", lineHeight: 1.45, color: "rgba(255,255,255,0.82)" }}>
+                    Czy na pewno chcesz usunąć <strong>dzisiejszy trening</strong> z serwera? Tej operacji nie
+                    można cofnąć.
+                  </p>
+                  <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={deleteWorkoutSubmitting}
+                      onClick={() => setDeleteWorkoutDialogOpen(false)}
+                    >
+                      Anuluj
+                    </button>
+                    <button
+                      type="button"
+                      className="btn primary"
+                      style={{ background: "rgba(180, 50, 50, 0.9)", borderColor: "rgba(255,255,255,0.12)" }}
+                      disabled={deleteWorkoutSubmitting}
+                      onClick={() => confirmDeleteTodaysWorkout()}
+                    >
+                      {deleteWorkoutSubmitting ? "Usuwanie…" : "Usuń"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
       <div className="modal-body" ref={editorContainerRef}>
         {pickerLoadError ? (
           <div className="errorText">Lista ćwiczeń: {pickerLoadError} — możesz dodać własne („Dodaj własne…”).</div>
@@ -833,15 +896,15 @@ export function WorkoutEditor({
         <section className="groupSection" aria-label="Current workout">
           <div className="groupHeaderRow">
             <div className="groupHeader">Your workout</div>
-            {draftLines.length > 0 ? (
+            {showTodaysWorkoutDelete && typeof onDeleteTodaysWorkoutRequest === "function" ? (
               <button
                 type="button"
                 className="btn btn-compact btn-danger-text"
                 disabled={isSubmitting}
-                onClick={clearEntireDraft}
-                aria-label="Wyczyść cały prefill z listy"
+                onClick={() => setDeleteWorkoutDialogOpen(true)}
+                aria-label="Usuń dzisiejszy trening"
               >
-                Wyczyść prefill
+                Usuń Workout
               </button>
             ) : null}
           </div>
