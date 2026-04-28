@@ -431,13 +431,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
 
   return (
     <main className="app">
-      <header className="header">
-        <div className="brand">
-          <div className="mark" aria-hidden="true" />
-          <div>
-            <div className="title">Brogress</div>
-          </div>
-        </div>
+      <header className="header header--actions-only">
         <div className="header-actions">
           <button
             type="button"
@@ -462,7 +456,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
             aria-label={view === "chart" ? "Hide current series chart" : "Show current series chart"}
             onClick={() => switchView("chart")}
           >
-            Your Brogress
+            Chart
           </button>
           {typeof onLogout === "function" ? (
             <button className="btn" type="button" onClick={onLogout}>
