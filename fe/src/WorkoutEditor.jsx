@@ -32,6 +32,9 @@ import {
 const POINTER_LONG_PRESS_MS = 220;
 const POINTER_TOUCH_CANCEL_PX = 8;
 const POINTER_MOUSE_ACTIVATE_PX = 4;
+/** Auto-scroll the host `.modal-body` when the pointer hugs its top/bottom edge during an active drag. */
+const POINTER_DRAG_SCROLL_EDGE_PX = 52;
+const POINTER_DRAG_SCROLL_MAX_STEP = 12;
 
 /**
  * Workout composer / editor body. Progress-bar model:
@@ -531,6 +534,61 @@ export function WorkoutEditor({
   };
   /** Active pointer-drag session (or null). See {@link startPointerDrag} for the shape. */
   const pointerDragRef = useRef(null);
+  /** Latest pointer position during drag — drives edge auto-scroll between pointermove events. */
+  const lastDragPointerClientRef = useRef({ x: 0, y: 0 });
+  const pointerDragAutoScrollRafRef = useRef(null);
+
+  /** Nudge the editor scroll container so long lists stay reachable while dragging. */
+  function applyPointerDragContainerScroll() {
+    const el = editorContainerRef.current;
+    if (!(el instanceof HTMLElement)) return;
+    const y = lastDragPointerClientRef.current.y;
+    const rect = el.getBoundingClientRect();
+    const edge = POINTER_DRAG_SCROLL_EDGE_PX;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) return;
+
+    let delta = 0;
+    if (y < rect.top + edge) {
+      const t = Math.min(1, (rect.top + edge - y) / edge);
+      delta = -Math.max(1, Math.round(t * POINTER_DRAG_SCROLL_MAX_STEP));
+    } else if (y > rect.bottom - edge) {
+      const t = Math.min(1, (y - (rect.bottom - edge)) / edge);
+      delta = Math.max(1, Math.round(t * POINTER_DRAG_SCROLL_MAX_STEP));
+    }
+    if (delta === 0) return;
+    el.scrollTop = Math.min(maxScroll, Math.max(0, el.scrollTop + delta));
+  }
+
+  /** Keep rAF scrolling only while the finger stays in an edge band and content can still move that way. */
+  function shouldContinuePointerDragAutoScroll() {
+    const el = editorContainerRef.current;
+    if (!(el instanceof HTMLElement)) return false;
+    if (!pointerDragRef.current?.active) return false;
+    const y = lastDragPointerClientRef.current.y;
+    const rect = el.getBoundingClientRect();
+    const edge = POINTER_DRAG_SCROLL_EDGE_PX;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    if (maxScroll <= 0) return false;
+    if (y < rect.top + edge) return el.scrollTop > 0;
+    if (y > rect.bottom - edge) return el.scrollTop < maxScroll;
+    return false;
+  }
+
+  function tickPointerDragAutoScroll() {
+    pointerDragAutoScrollRafRef.current = null;
+    if (!pointerDragRef.current?.active) return;
+    applyPointerDragContainerScroll();
+    if (shouldContinuePointerDragAutoScroll()) {
+      pointerDragAutoScrollRafRef.current = window.requestAnimationFrame(tickPointerDragAutoScroll);
+    }
+  }
+
+  function schedulePointerDragAutoScrollIfNeeded() {
+    if (pointerDragAutoScrollRafRef.current != null) return;
+    if (!shouldContinuePointerDragAutoScroll()) return;
+    pointerDragAutoScrollRafRef.current = window.requestAnimationFrame(tickPointerDragAutoScroll);
+  }
 
   /** Walk up from the hit element to the nearest [data-drop-kind] zone (row / bar / end). */
   function hitTestDropZone(x, y) {
@@ -580,6 +638,11 @@ export function WorkoutEditor({
   }
 
   function teardownPointerDrag() {
+    const rafId = pointerDragAutoScrollRafRef.current;
+    if (rafId != null) {
+      window.cancelAnimationFrame(rafId);
+      pointerDragAutoScrollRafRef.current = null;
+    }
     const d = pointerDragRef.current;
     if (d) {
       if (d.touchHoldTimer) window.clearTimeout(d.touchHoldTimer);
@@ -615,8 +678,11 @@ export function WorkoutEditor({
       activatePointerDrag();
     }
 
-    // Active drag: suppress native scroll/select and hit-test the pointer against drop zones.
+    // Active drag: suppress native scroll/select; edge auto-scroll + hit-test drop zones.
     e.preventDefault();
+    lastDragPointerClientRef.current = { x: e.clientX, y: e.clientY };
+    applyPointerDragContainerScroll();
+    schedulePointerDragAutoScrollIfNeeded();
     const zone = hitTestDropZone(e.clientX, e.clientY);
     if (!zone) {
       setDropTarget(null);
