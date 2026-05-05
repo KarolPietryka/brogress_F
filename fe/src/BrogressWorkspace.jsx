@@ -12,7 +12,7 @@ import {
   parseRepsIntForApi,
   parseWeightForApi,
 } from "./workoutHelpers.js";
-import { GraphPanel } from "./GraphPanel.jsx";
+import { ExerciseSeriesChartPanel } from "./ExerciseSeriesChartPanel.jsx";
 import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
 import { WorkoutEditor } from "./WorkoutEditor.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
@@ -39,7 +39,7 @@ function todayWorkoutIdFromSummaryList(items) {
  * Three views share one shell:
  *   "today"   — inline {@link WorkoutEditor} for the current day's workout (default after login).
  *   "history" — summary list; clicking a row opens {@link WorkoutModal} with that workout.
- *   "chart"   — aggregate volume chart.
+ *   "chart"   — exercise series chart (filters + Search).
  *
  * Today and the History popup hold independent draft/meta/editingWorkout state so edits to an
  * older workout inside the popup don't clobber whatever the user is composing for today.
@@ -78,10 +78,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   // --- Summary list & chart -----------------------------------------------
   const [templateItems, setTemplateItems] = useState([]);
   const [templateLoadError, setTemplateLoadError] = useState("");
-  const [graphVolumePoints, setGraphVolumePoints] = useState([]);
-  const [graphVolumeError, setGraphVolumeError] = useState("");
-  const [graphVolumeLoading, setGraphVolumeLoading] = useState(false);
-  const [graphReloadTrigger, setGraphReloadTrigger] = useState(0);
 
   const [planTemplates, setPlanTemplates] = useState([]);
   const [planTemplatesError, setPlanTemplatesError] = useState("");
@@ -180,40 +176,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
       }
     })();
   }, [workoutClient]);
-
-  useEffect(() => {
-    // Chart data is fetched lazily — only when the chart view is active — and re-fetched whenever
-    // a modal persist flips the reload trigger so the chart stays in sync with the list.
-    if (view !== "chart") return undefined;
-    let cancelled = false;
-    setGraphVolumeLoading(true);
-    setGraphVolumeError("");
-    (async () => {
-      try {
-        const res = await workoutClient.getGraphVolume();
-        if (!res.ok) {
-          const text = await res.text().catch(() => "");
-          throw new Error(text || `HTTP ${res.status}`);
-        }
-        const data = await res.json();
-        if (!cancelled) {
-          setGraphVolumePoints(Array.isArray(data) ? data : []);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setGraphVolumeError(
-            `Could not load chart data (${e instanceof Error ? e.message : "unknown error"}).`
-          );
-          setGraphVolumePoints([]);
-        }
-      } finally {
-        if (!cancelled) setGraphVolumeLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [view, graphReloadTrigger, workoutClient]);
 
   /**
    * Builds a {@link WorkoutSubmitRequest} from the given draft lines.
@@ -400,9 +362,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           `Zmiany zapisane, ale lista nie odświeżyła się (${e instanceof Error ? e.message : "unknown error"}).`
         );
       });
-      if (view === "chart") {
-        setGraphReloadTrigger((v) => v + 1);
-      }
     }
   }
 
@@ -417,10 +376,6 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           `Zmiany zapisane, ale lista nie odświeżyła się (${e instanceof Error ? e.message : "unknown error"}).`
         );
       });
-    }
-    if (nextView === "chart" && todayDirtyRef.current) {
-      todayDirtyRef.current = false;
-      setGraphReloadTrigger((v) => v + 1);
     }
     setView(nextView);
     if (import.meta.env.VITE_POSTHOG_KEY) {
@@ -453,7 +408,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
             type="button"
             className={`btn${view === "chart" ? " btn-toggle-on" : ""}`}
             aria-pressed={view === "chart"}
-            aria-label={view === "chart" ? "Hide current series chart" : "Show current series chart"}
+            aria-label={view === "chart" ? "Hide exercise chart" : "Show exercise chart"}
             onClick={() => switchView("chart")}
           >
             Chart
@@ -498,10 +453,10 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
           />
         ) : null}
         {view === "chart" ? (
-          <GraphPanel
-            volumePoints={graphVolumePoints}
-            volumeError={graphVolumeError}
-            volumeLoading={graphVolumeLoading}
+          <ExerciseSeriesChartPanel
+            workoutClient={workoutClient}
+            loadExercisePicker={loadExercisePicker}
+            createUserExercise={createUserExercise}
           />
         ) : null}
       </section>

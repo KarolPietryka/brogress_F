@@ -83,10 +83,12 @@ export class WorkoutClient {
     }).then((r) => this.#withAuth(r));
   }
 
-  /** GET /brogres/graph — [{ workoutDay, volume }, …] for current specialization slice. */
-  getGraphVolume() {
-    return fetch(`${WORKOUT_API_BASE}/brogres/graph`, {
-      headers: this.#headers(false),
+  /** POST /workout/graph/exercise-series — per-day sums of weight & reps for one exercise (Charts). */
+  postExerciseSeriesChart(body) {
+    return fetch(`${WORKOUT_API_BASE}/workout/graph/exercise-series`, {
+      method: "POST",
+      headers: this.#headers(true),
+      body: JSON.stringify(body),
     }).then((r) => this.#withAuth(r));
   }
 
