@@ -227,10 +227,10 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
               : null;
           const targetWorkoutId = editing?.id ?? summaryTodayId ?? null;
 
-          const res =
-            targetWorkoutId != null
-              ? await workoutClient.putWorkout(targetWorkoutId, request)
-              : await workoutClient.postWorkouts(request);
+          const usedPost = targetWorkoutId == null;
+          const res = usedPost
+            ? await workoutClient.postWorkouts(request)
+            : await workoutClient.putWorkout(targetWorkoutId, request);
           if (!res.ok) {
             const text = await res.text().catch(() => "");
             throw new Error(text || `HTTP ${res.status}`);
@@ -246,10 +246,12 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
               };
               if (isToday) setTodayEditingWorkout(target);
               else setHistoryEditingWorkout(target);
-              if (isToday) {
-                refreshWorkoutsFromServer().catch(() => {});
-              }
             }
+          }
+
+          // PRD §6: after materializing today’s workout on the server (POST), refresh list envelope so the Start-new tile hides and today’s date tile matches BE.
+          if (isToday && usedPost) {
+            refreshWorkoutsFromServer().catch(() => {});
           }
 
           if (isToday) {
