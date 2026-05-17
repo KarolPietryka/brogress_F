@@ -25,8 +25,9 @@ function planSlideSubline(template) {
 /**
  * One slide = one element from {@code GET /workout/recent-plan-templates} (data includes {@code lastUsedDate} and {@code bodyPart}).
  * Layout matches the old {@code HomePickCarousel} dummy: fixed-width cards, touch swipe, and arrow nav with {@code rewind}.
- * {@code onApplyPlan} runs on real slide change (not the first init event) to map {@code bodyPart} locally.
- * When {@code showStartNewTrailingTile} is true (BE: no workout for {@code serverToday}), a final non-template slide is appended — layout only, not navigation (see PRD).
+ * {@code onApplyPlan} runs on real slide change (not the first init event): template → map {@code bodyPart} locally;
+ * trailing "Start new" slide → {@code onApplyPlan(null)} for an empty draft (carousel swipe only — tile stays non-clickable per PRD).
+ * When {@code showStartNewTrailingTile} is true (BE: no workout for {@code serverToday}), that final slide is appended.
  */
 export function PlanTemplateCarousel({
   templates,
@@ -83,7 +84,13 @@ export function PlanTemplateCarousel({
               skipFirstSlideChange.current = false;
               return;
             }
-            const t = templates[swiper.activeIndex];
+            const idx = swiper.activeIndex;
+            const n = templates.length;
+            if (showStartNewTrailingTile && idx === n) {
+              if (typeof onApplyPlan === "function") onApplyPlan(null);
+              return;
+            }
+            const t = templates[idx];
             if (t && typeof onApplyPlan === "function") onApplyPlan(t);
           }}
         >

@@ -49,6 +49,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   // --- Today state ---------------------------------------------------------
   // Prefill fires once per mount (per login); subsequent interactions just mutate the draft.
   const todayPrefillInFlightRef = useRef(false);
+  /** When true, ignore late {@code GET /workout/prefill} so the carousel "Start new" empty template is not overwritten. */
+  const todayUserChoseEmptyDraftRef = useRef(false);
   const [todayDraftLines, setTodayDraftLines] = useState([]);
   const [todayExerciseMeta, setTodayExerciseMeta] = useState(() => ({}));
   const [todayEditingWorkout, setTodayEditingWorkout] = useState(null);
@@ -167,6 +169,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
         const res = await workoutClient.prefillWorkout();
         if (!res.ok) return;
         const data = await res.json();
+        if (todayUserChoseEmptyDraftRef.current) return;
         const { draftLines, exerciseMeta } = mapPrefillToDraft(data);
         setTodayDraftLines(draftLines);
         setTodayExerciseMeta(exerciseMeta);
@@ -271,8 +274,19 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     [persistDraft]
   );
 
-  /** Carousel swipe: in-memory {@code bodyPart} from list payload only — no prefill HTTP. */
+  /**
+   * Carousel slide selection: map template {@code bodyPart} locally, or {@code null} for the trailing
+   * "Start new" slide — empty draft only, no workout fetch by id (PRD empty template).
+   */
   const applyPlanFromCarousel = useCallback((plan) => {
+    if (plan == null) {
+      todayUserChoseEmptyDraftRef.current = true;
+      setTodayDraftLines([]);
+      setTodayExerciseMeta({});
+      setTodaySubmitError("");
+      return;
+    }
+    todayUserChoseEmptyDraftRef.current = false;
     const { draftLines, exerciseMeta } = mapPrefillToDraft({ bodyPart: plan?.bodyPart });
     setTodayDraftLines(draftLines);
     setTodayExerciseMeta(exerciseMeta);
@@ -293,6 +307,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
       setTodaySubmitError(text || `Nie udało się usunąć treningu (HTTP ${res.status}).`);
       return;
     }
+    // Re-seed from BE prefill — allow hydration again after a successful delete.
+    todayUserChoseEmptyDraftRef.current = false;
     setTodayEditingWorkout(null);
     try {
       await refreshWorkoutsFromServer();

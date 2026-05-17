@@ -977,6 +977,7 @@ export function WorkoutEditor({
             ) : null}
           </div>
 
+          {/* Carousel may call {@code onApplyPlanCarousel(null)} when the trailing "Start new" slide is selected (swipe), not a tile click. */}
           <PlanTemplateCarousel
             templates={planCarouselTemplates}
             loadError={planCarouselError}
