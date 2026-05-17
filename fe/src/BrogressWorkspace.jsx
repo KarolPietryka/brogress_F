@@ -202,9 +202,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }
 
   /**
-   * Shared persist pipeline: POST when no workout exists yet, PUT when one does. The channel
-   * passed in decides which set of state setters to update (Today vs History popup) so the two
-   * editors never race or overwrite each other's editing target.
+   * Shared persist pipeline: POST /workout only when Today has no persisted id yet (PRD 2026-05-17 §5 — “Start new”
+   * empty draft); otherwise PUT /workout/{id}. History always opens with an id. The channel selects which state to update.
    */
   const persistDraft = useCallback(
     (channel, nextLines, nextMetaArg) => {
@@ -220,17 +219,25 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
 
       (async () => {
         try {
-          const res = editing
-            ? await workoutClient.putWorkout(editing.id, request)
-            : await workoutClient.postWorkouts(request);
+          const hadLocalEditTarget = editing != null;
+          // Today: reuse id from the summary list when BE already has a row for serverToday (prefill path), so the first drop is a PUT, not a second POST.
+          const summaryTodayId =
+            isToday
+              ? todayWorkoutIdFromSummaryList(templateItems, workoutListContext.serverToday)
+              : null;
+          const targetWorkoutId = editing?.id ?? summaryTodayId ?? null;
+
+          const res =
+            targetWorkoutId != null
+              ? await workoutClient.putWorkout(targetWorkoutId, request)
+              : await workoutClient.postWorkouts(request);
           if (!res.ok) {
             const text = await res.text().catch(() => "");
             throw new Error(text || `HTTP ${res.status}`);
           }
 
-          // Compose → edit transition: pick up the created workout's id so the next autosave PUTs
-          // instead of POSTing again (BE would otherwise delete+replace today's sets every call).
-          if (!editing) {
+          // First successful autosave for this surface: capture id from the response so later saves use PUT.
+          if (!hadLocalEditTarget) {
             const created = await res.json().catch(() => null);
             if (created?.id != null) {
               const target = {
@@ -261,7 +268,16 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
     },
     // Explicit deps so stale closures don't slip in; build helper is pure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [todayEditingWorkout, historyEditingWorkout, todayExerciseMeta, historyExerciseMeta, workoutClient, refreshWorkoutsFromServer]
+    [
+      todayEditingWorkout,
+      historyEditingWorkout,
+      todayExerciseMeta,
+      historyExerciseMeta,
+      workoutClient,
+      refreshWorkoutsFromServer,
+      templateItems,
+      workoutListContext.serverToday,
+    ]
   );
 
   const persistTodayDraft = useCallback(
