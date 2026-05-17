@@ -240,6 +240,24 @@ export function mapServerWorkout(w) {
   };
 }
 
+/**
+ * GET /workout envelope: summaries plus {@code serverToday} / {@code hasWorkoutForToday} (never infer “today” from the browser).
+ */
+export function mapWorkoutListEnvelope(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { items: [], serverToday: null, hasWorkoutForToday: false };
+  }
+  const raw = payload.workouts;
+  const list = Array.isArray(raw) ? raw : [];
+  const serverToday =
+    payload.serverToday != null ? String(payload.serverToday).slice(0, 10) : null;
+  return {
+    items: list.map(mapServerWorkout),
+    serverToday,
+    hasWorkoutForToday: Boolean(payload.hasWorkoutForToday),
+  };
+}
+
 /** Maps GET /workout/prefill JSON to modal draft state (same shape as manual picks + meta). */
 export function mapPrefillToDraft(prefill) {
   const exercises = prefill?.bodyPart;

@@ -4,7 +4,7 @@ import { WorkoutClient } from "./workoutClient.js";
 import { BODY_PART_API_NAME } from "./workoutData.js";
 import { WorkoutExercise, WorkoutSubmitRequest } from "./model/workoutRequest.js";
 import {
-  mapServerWorkout,
+  mapWorkoutListEnvelope,
   mapPrefillToDraft,
   filterRecentPlanTemplatesWithSnapshots,
   mapSummaryItemToDraft,
@@ -17,21 +17,10 @@ import { WorkoutListPanel } from "./WorkoutListPanel.jsx";
 import { WorkoutEditor } from "./WorkoutEditor.jsx";
 import { WorkoutModal } from "./WorkoutModal.jsx";
 
-function calendarTodayYmd() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** True when {@code GET /workout} summary list already has a row for the calendar “today” (YMD prefix match on {@code workoutDate}). */
-function listHasWorkoutForToday(items) {
-  const ymd = calendarTodayYmd();
-  return items.some((it) => String(it.workoutDate).slice(0, 10) === ymd);
-}
-
-/** Server id for today’s workout row (for delete), or null — use when prefill loaded an existing today session but {@code todayEditingWorkout} was never set. */
-function todayWorkoutIdFromSummaryList(items) {
-  const ymd = calendarTodayYmd();
-  const row = Array.isArray(items) ? items.find((it) => String(it.workoutDate).slice(0, 10) === ymd) : null;
+/** Resolves today’s workout id from the summary list using BE {@code serverToday} (not the browser clock). */
+function todayWorkoutIdFromSummaryList(items, serverTodayYmd) {
+  if (serverTodayYmd == null) return null;
+  const row = Array.isArray(items) ? items.find((it) => String(it.workoutDate).slice(0, 10) === serverTodayYmd) : null;
   return row?.id != null ? row.id : null;
 }
 
@@ -78,6 +67,11 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   // --- Summary list & chart -----------------------------------------------
   const [templateItems, setTemplateItems] = useState([]);
   const [templateLoadError, setTemplateLoadError] = useState("");
+  /** From GET /workout envelope: server calendar + whether a row exists for that day (do not infer from the client). */
+  const [workoutListContext, setWorkoutListContext] = useState(() => ({
+    serverToday: null,
+    hasWorkoutForToday: false,
+  }));
 
   const [planTemplates, setPlanTemplates] = useState([]);
   const [planTemplatesError, setPlanTemplatesError] = useState("");
@@ -89,7 +83,12 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
       throw new Error(text || `HTTP ${woRes.status}`);
     }
     const list = await woRes.json();
-    setTemplateItems(Array.isArray(list) ? list.map(mapServerWorkout) : []);
+    const mapped = mapWorkoutListEnvelope(list);
+    setTemplateItems(mapped.items);
+    setWorkoutListContext({
+      serverToday: mapped.serverToday,
+      hasWorkoutForToday: mapped.hasWorkoutForToday,
+    });
     setTemplateLoadError("");
   }, [workoutClient]);
 
@@ -281,8 +280,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
 
   const todayPersistedWorkoutId = useMemo(() => {
     if (todayEditingWorkout?.id != null) return todayEditingWorkout.id;
-    return todayWorkoutIdFromSummaryList(templateItems);
-  }, [todayEditingWorkout, templateItems]);
+    return todayWorkoutIdFromSummaryList(templateItems, workoutListContext.serverToday);
+  }, [todayEditingWorkout, templateItems, workoutListContext.serverToday]);
 
   const handleDeleteTodaysWorkout = useCallback(async () => {
     const id = todayPersistedWorkoutId;
@@ -321,16 +320,16 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   }, [todayPersistedWorkoutId, workoutClient, refreshWorkoutsFromServer, loadPlanTemplates]);
 
   /**
-   * Plans-from-history strip: only when there is **no** persisted workout for today in {@code templateItems} (same
-   * source as History). If today’s row exists — user is already in “today’s session” — the carousel is hidden.
+   * Plans-from-history strip: only when BE reports **no** workout for {@code serverToday} ({@code workoutListContext.hasWorkoutForToday}).
+   * If today’s row exists — user is already in “today’s session” — the carousel is hidden.
    * Still show the template error strip if the list call failed, **unless** today already has a workout (then nothing).
    */
   const showPlanCarouselUi = useMemo(() => {
-    if (listHasWorkoutForToday(templateItems)) return false;
+    if (workoutListContext.hasWorkoutForToday) return false;
     return (
       Boolean(planTemplatesError) || (Array.isArray(planTemplates) && planTemplates.length > 0)
     );
-  }, [planTemplates, planTemplatesError, templateItems]);
+  }, [planTemplates, planTemplatesError, workoutListContext.hasWorkoutForToday]);
 
   function openHistoryModal(mappedItem) {
     // Fresh edit session → clear any previous "dirty" flag so opening-and-closing without drops
@@ -439,6 +438,7 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
               planCarouselTemplates={planTemplates}
               planCarouselError={planTemplatesError}
               showPlanCarousel={showPlanCarouselUi}
+              showStartNewCarouselTile={!workoutListContext.hasWorkoutForToday}
               onApplyPlanCarousel={applyPlanFromCarousel}
               showTodaysWorkoutDelete={todayPersistedWorkoutId != null}
               onDeleteTodaysWorkoutRequest={handleDeleteTodaysWorkout}

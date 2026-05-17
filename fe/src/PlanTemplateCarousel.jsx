@@ -26,15 +26,24 @@ function planSlideSubline(template) {
  * One slide = one element from {@code GET /workout/recent-plan-templates} (data includes {@code lastUsedDate} and {@code bodyPart}).
  * Layout matches the old {@code HomePickCarousel} dummy: fixed-width cards, touch swipe, and arrow nav with {@code rewind}.
  * {@code onApplyPlan} runs on real slide change (not the first init event) to map {@code bodyPart} locally.
+ * When {@code showStartNewTrailingTile} is true (BE: no workout for {@code serverToday}), a final non-template slide is appended — layout only, not navigation (see PRD).
  */
-export function PlanTemplateCarousel({ templates, loadError, visible, onApplyPlan }) {
+export function PlanTemplateCarousel({
+  templates,
+  loadError,
+  visible,
+  onApplyPlan,
+  showStartNewTrailingTile = false,
+}) {
   const skipFirstSlideChange = useRef(true);
   const listSignature = useMemo(
     () =>
-      Array.isArray(templates)
-        ? templates.map((t) => `${t?.planKey ?? ""}:${t?.sourceWorkoutId ?? ""}`).join("|")
-        : "",
-    [templates]
+      `${showStartNewTrailingTile ? "sn|" : ""}${
+        Array.isArray(templates)
+          ? templates.map((t) => `${t?.planKey ?? ""}:${t?.sourceWorkoutId ?? ""}`).join("|")
+          : ""
+      }`,
+    [templates, showStartNewTrailingTile]
   );
 
   useLayoutEffect(() => {
@@ -98,6 +107,35 @@ export function PlanTemplateCarousel({ templates, loadError, visible, onApplyPla
               </div>
             </SwiperSlide>
           ))}
+          {showStartNewTrailingTile ? (
+            <SwiperSlide
+              key="__start_new_trailing__"
+              className="planCarousel__slide"
+              style={{
+                width: 220,
+                maxWidth: "80vw",
+                boxSizing: "border-box",
+              }}
+            >
+              {/* Orientation only: not a control — avoids fake-button semantics and stray focus (PRD). */}
+              <div className="planCarousel__tile planCarousel__tile--startNew" aria-hidden="true">
+                <svg
+                  className="planCarousel__startNewArrow"
+                  width="28"
+                  height="28"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
+                  <path
+                    fill="currentColor"
+                    d="M12 4l7.07 7.07-1.41 1.41L13 8.83V20h-2V8.83L6.34 12.48 4.93 11.07 12 4z"
+                  />
+                </svg>
+                <div className="planCarousel__tileDate planCarousel__tileDate--startNew">Start new</div>
+              </div>
+            </SwiperSlide>
+          ) : null}
         </Swiper>
       </div>
     </div>

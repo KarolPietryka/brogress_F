@@ -64,6 +64,8 @@ export function WorkoutEditor({
   planCarouselTemplates,
   planCarouselError,
   showPlanCarousel,
+  /** When true, carousel appends the "Start new" trailing tile (BE says no workout for server today). */
+  showStartNewCarouselTile = false,
   onApplyPlanCarousel,
   showTodaysWorkoutDelete,
   onDeleteTodaysWorkoutRequest,
@@ -979,6 +981,7 @@ export function WorkoutEditor({
             templates={planCarouselTemplates}
             loadError={planCarouselError}
             visible={showPlanCarousel}
+            showStartNewTrailingTile={showStartNewCarouselTile}
             onApplyPlan={onApplyPlanCarousel}
           />
 
