@@ -64,7 +64,7 @@ export function WorkoutEditor({
   planCarouselTemplates,
   planCarouselError,
   showPlanCarousel,
-  /** When true, carousel appends the "Start new" trailing tile (BE says no workout for server today). */
+  /** When true, carousel prepends the “Add new” lead slide (BE says no workout for server today); default selection is the first history plan. */
   showStartNewCarouselTile = false,
   onApplyPlanCarousel,
   showTodaysWorkoutDelete,
@@ -977,12 +977,11 @@ export function WorkoutEditor({
             ) : null}
           </div>
 
-          {/* Carousel may call {@code onApplyPlanCarousel(null)} when the trailing "Start new" slide is selected (swipe), not a tile click. */}
           <PlanTemplateCarousel
             templates={planCarouselTemplates}
             loadError={planCarouselError}
             visible={showPlanCarousel}
-            showStartNewTrailingTile={showStartNewCarouselTile}
+            showStartNewFirstSlide={showStartNewCarouselTile}
             onApplyPlan={onApplyPlanCarousel}
           />
 

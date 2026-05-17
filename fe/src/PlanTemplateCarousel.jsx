@@ -22,29 +22,56 @@ function planSlideSubline(template) {
   return names.length > 2 ? `${head}…` : head;
 }
 
+const slideStyle = {
+  width: 220,
+  maxWidth: "80vw",
+  boxSizing: "border-box",
+};
+
+function cueTileInner(label) {
+  return (
+    <div className="planCarousel__tile planCarousel__tile--startNew" aria-hidden="true">
+      <svg
+        className="planCarousel__startNewArrow"
+        width="28"
+        height="28"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <path
+          fill="currentColor"
+          d="M12 4l7.07 7.07-1.41 1.41L13 8.83V20h-2V8.83L6.34 12.48 4.93 11.07 12 4z"
+        />
+      </svg>
+      <div className="planCarousel__tileDate planCarousel__tileDate--startNew">{label}</div>
+    </div>
+  );
+}
+
 /**
  * One slide = one element from {@code GET /workout/recent-plan-templates} (data includes {@code lastUsedDate} and {@code bodyPart}).
- * Layout matches the old {@code HomePickCarousel} dummy: fixed-width cards, touch swipe, and arrow nav with {@code rewind}.
- * {@code onApplyPlan} runs on real slide change (not the first init event): template → map {@code bodyPart} locally;
- * trailing "Start new" slide → {@code onApplyPlan(null)} for an empty draft (carousel swipe only — tile stays non-clickable per PRD).
- * When {@code showStartNewTrailingTile} is true (BE: no workout for {@code serverToday}), that final slide is appended.
+ * When {@code showStartNewFirstSlide} (BE: no workout today): slide 0 is “Add new”; slides {@code 1..n} are history plans; last slide is “Start new” on the right. {@code initialSlide} is 1. Lead and trail call {@code onApplyPlan(null)}; plans call {@code onApplyPlan(template)}.
  */
 export function PlanTemplateCarousel({
   templates,
   loadError,
   visible,
   onApplyPlan,
-  showStartNewTrailingTile = false,
+  showStartNewFirstSlide = false,
 }) {
   const skipFirstSlideChange = useRef(true);
+  /** Dedupe {@code onSlideChange} when the active index does not actually change (lead-slide mode). */
+  const lastActiveIndexRef = useRef(null);
+
   const listSignature = useMemo(
     () =>
-      `${showStartNewTrailingTile ? "sn|" : ""}${
+      `${showStartNewFirstSlide ? "snLR|" : ""}${
         Array.isArray(templates)
           ? templates.map((t) => `${t?.planKey ?? ""}:${t?.sourceWorkoutId ?? ""}`).join("|")
           : ""
       }`,
-    [templates, showStartNewTrailingTile]
+    [templates, showStartNewFirstSlide]
   );
 
   useLayoutEffect(() => {
@@ -61,6 +88,25 @@ export function PlanTemplateCarousel({
   }
   if (!Array.isArray(templates) || templates.length === 0) return null;
 
+  const totalSlides = templates.length + (showStartNewFirstSlide ? 2 : 0);
+  const rewindEnabled = totalSlides > 1;
+  const initialSlide = showStartNewFirstSlide ? 1 : 0;
+  const lastSlideIndex = showStartNewFirstSlide ? templates.length + 1 : -1;
+
+  function applyLeadSlideIndex(idx) {
+    if (showStartNewFirstSlide) {
+      if (idx === 0 || idx === lastSlideIndex) {
+        if (typeof onApplyPlan === "function") onApplyPlan(null);
+        return;
+      }
+      const t = templates[idx - 1];
+      if (t && typeof onApplyPlan === "function") onApplyPlan(t);
+      return;
+    }
+    const t = templates[idx];
+    if (t && typeof onApplyPlan === "function") onApplyPlan(t);
+  }
+
   return (
     <div className="planCarousel" data-plan-template-carousel="" aria-label="Recent workout plans">
       <div className="planCarousel__kicker">Plans from history</div>
@@ -69,78 +115,60 @@ export function PlanTemplateCarousel({
           key={listSignature}
           className="planCarousel__swiper"
           modules={[Navigation]}
+          initialSlide={initialSlide}
           navigation
           allowTouchMove
           autoHeight
           centeredSlides
           slidesPerView="auto"
           spaceBetween={12}
-          rewind
+          rewind={rewindEnabled}
           onInit={(swiper) => {
+            lastActiveIndexRef.current = swiper.activeIndex;
+            // Default selection is index 1 — first history plan (prefill may race; this wins when carousel mounts).
+            if (showStartNewFirstSlide && templates.length > 0 && typeof onApplyPlan === "function") {
+              onApplyPlan(templates[0]);
+            }
             swiper.update();
           }}
           onSlideChange={(swiper) => {
+            const idx = swiper.activeIndex;
+
+            if (showStartNewFirstSlide) {
+              if (lastActiveIndexRef.current === idx) return;
+              lastActiveIndexRef.current = idx;
+              applyLeadSlideIndex(idx);
+              return;
+            }
+
             if (skipFirstSlideChange.current) {
               skipFirstSlideChange.current = false;
               return;
             }
-            const idx = swiper.activeIndex;
-            const n = templates.length;
-            if (showStartNewTrailingTile && idx === n) {
-              if (typeof onApplyPlan === "function") onApplyPlan(null);
-              return;
-            }
-            const t = templates[idx];
-            if (t && typeof onApplyPlan === "function") onApplyPlan(t);
+            applyLeadSlideIndex(idx);
           }}
         >
+          {showStartNewFirstSlide ? (
+            <SwiperSlide key="__add_new_lead__" className="planCarousel__slide" style={slideStyle}>
+              {/* Orientation only: not a control — avoids fake-button semantics (PRD). */}
+              {cueTileInner("Add new")}
+            </SwiperSlide>
+          ) : null}
           {templates.map((t) => (
             <SwiperSlide
               key={`${t.planKey}:${t.sourceWorkoutId}`}
               className="planCarousel__slide"
-              style={{
-                width: 220,
-                maxWidth: "80vw",
-                boxSizing: "border-box",
-              }}
+              style={slideStyle}
             >
-              <div
-                className="planCarousel__tile"
-                role="group"
-                aria-label={`Plan from ${t.lastUsedDate || "history"}`}
-              >
+              <div className="planCarousel__tile" role="group" aria-label={`Plan from ${t.lastUsedDate || "history"}`}>
                 <div className="planCarousel__tileDate">{formatWorkoutDate(t.lastUsedDate)}</div>
                 <div className="planCarousel__tileSub">{planSlideSubline(t)}</div>
               </div>
             </SwiperSlide>
           ))}
-          {showStartNewTrailingTile ? (
-            <SwiperSlide
-              key="__start_new_trailing__"
-              className="planCarousel__slide"
-              style={{
-                width: 220,
-                maxWidth: "80vw",
-                boxSizing: "border-box",
-              }}
-            >
-              {/* Orientation only: not a control — avoids fake-button semantics and stray focus (PRD). */}
-              <div className="planCarousel__tile planCarousel__tile--startNew" aria-hidden="true">
-                <svg
-                  className="planCarousel__startNewArrow"
-                  width="28"
-                  height="28"
-                  viewBox="0 0 24 24"
-                  aria-hidden="true"
-                  focusable="false"
-                >
-                  <path
-                    fill="currentColor"
-                    d="M12 4l7.07 7.07-1.41 1.41L13 8.83V20h-2V8.83L6.34 12.48 4.93 11.07 12 4z"
-                  />
-                </svg>
-                <div className="planCarousel__tileDate planCarousel__tileDate--startNew">Start new</div>
-              </div>
+          {showStartNewFirstSlide ? (
+            <SwiperSlide key="__start_new_trail__" className="planCarousel__slide" style={slideStyle}>
+              {cueTileInner("Start new")}
             </SwiperSlide>
           ) : null}
         </Swiper>

@@ -275,8 +275,8 @@ export function BrogressWorkspace({ authToken, onAuthLost, onLogout }) {
   );
 
   /**
-   * Carousel slide selection: map template {@code bodyPart} locally, or {@code null} for the trailing
-   * "Start new" slide — empty draft only, no workout fetch by id (PRD empty template).
+   * Carousel slide selection: map template {@code bodyPart} locally, or {@code null} for the lead
+   * “Add new” slide (empty draft only, no workout fetch by id).
    */
   const applyPlanFromCarousel = useCallback((plan) => {
     if (plan == null) {
