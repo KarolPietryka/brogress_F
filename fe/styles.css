@@ -1394,7 +1394,7 @@ body.is-pointer-dragging * {
 
   /* Composer: group + W/R + on row 1; exercise picker full width on row 2 */
   .exerciseRow--composer {
-    grid-template-columns: minmax(0, 1fr) 50px 50px 34px;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) 34px;
   }
 
   .exerciseRow--composer .dragHandleSpacer {
@@ -1404,11 +1404,11 @@ body.is-pointer-dragging * {
   .exerciseRow--composer .exerciseNameCell .composerPickTrigger--group {
     grid-column: 1;
     grid-row: 1;
-    justify-self: stretch;
+    justify-self: start;
     align-self: center;
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
     min-width: 0;
-    max-width: none;
   }
 
   .exerciseRow--composer .exerciseNameCell .composerPickTrigger--exercise {
@@ -1422,12 +1422,27 @@ body.is-pointer-dragging * {
   }
 
   .exerciseRow--composer > .exerciseFields {
-    grid-column: 2 / 4;
+    grid-column: 2;
     grid-row: 1;
+    min-width: 0;
+  }
+
+  .exerciseRow--composer .exerciseFields .numField {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .exerciseRow--composer .exerciseFields .numField:first-child {
+    flex: 1 1 0;
+  }
+
+  .exerciseRow--composer .exerciseFields .numField:last-child {
+    flex: 0.8 1 0;
   }
 
   .exerciseRow--composer > .rowAdd {
-    grid-column: 4;
+    grid-column: 3;
     grid-row: 1;
   }
 
