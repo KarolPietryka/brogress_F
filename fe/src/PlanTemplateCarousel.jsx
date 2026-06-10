@@ -31,20 +31,23 @@ const slideStyle = {
 function cueTileInner(label) {
   return (
     <div className="planCarousel__tile planCarousel__tile--startNew" aria-hidden="true">
-      <svg
-        className="planCarousel__startNewArrow"
-        width="28"
-        height="28"
-        viewBox="0 0 24 24"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <path
-          fill="currentColor"
-          d="M12 4l7.07 7.07-1.41 1.41L13 8.83V20h-2V8.83L6.34 12.48 4.93 11.07 12 4z"
-        />
-      </svg>
-      <div className="planCarousel__tileDate planCarousel__tileDate--startNew">{label}</div>
+      <div className="planCarousel__tileDate planCarousel__tileDate--startNew">
+        <svg
+          className="planCarousel__startNewArrow"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path
+            fill="currentColor"
+            d="M12 4l7.07 7.07-1.41 1.41L13 8.83V20h-2V8.83L6.34 12.48 4.93 11.07 12 4z"
+          />
+        </svg>
+        <span>{label}</span>
+      </div>
+      <div className="planCarousel__tileSub planCarousel__tileSub--startNew">Blank session</div>
     </div>
   );
 }
