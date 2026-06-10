@@ -54,7 +54,7 @@ function cueTileInner(label) {
 
 /**
  * One slide = one element from {@code GET /workout/recent-plan-templates} (data includes {@code lastUsedDate} and {@code bodyPart}).
- * When {@code showStartNewFirstSlide} (BE: no workout today): slide 0 is “Add new”; slides {@code 1..n} are history plans; last slide is “Start new” on the right. {@code initialSlide} is 1. Lead and trail call {@code onApplyPlan(null)}; plans call {@code onApplyPlan(template)}.
+ * When {@code showStartNewFirstSlide} (BE: no workout today): slide 0 is “Add new”; slides {@code 1..n} are history plans; last slide is “Start new” on the right. {@code initialSlide} is 0. Lead and trail call {@code onApplyPlan(null)}; plans call {@code onApplyPlan(template)}.
  */
 export function PlanTemplateCarousel({
   templates,
@@ -93,7 +93,7 @@ export function PlanTemplateCarousel({
 
   const totalSlides = templates.length + (showStartNewFirstSlide ? 2 : 0);
   const rewindEnabled = totalSlides > 1;
-  const initialSlide = showStartNewFirstSlide ? 1 : 0;
+  const initialSlide = 0;
   const lastSlideIndex = showStartNewFirstSlide ? templates.length + 1 : -1;
 
   function applyLeadSlideIndex(idx) {
@@ -128,9 +128,8 @@ export function PlanTemplateCarousel({
           rewind={rewindEnabled}
           onInit={(swiper) => {
             lastActiveIndexRef.current = swiper.activeIndex;
-            // Default selection is index 1 — first history plan (prefill may race; this wins when carousel mounts).
-            if (showStartNewFirstSlide && templates.length > 0 && typeof onApplyPlan === "function") {
-              onApplyPlan(templates[0]);
+            if (showStartNewFirstSlide && typeof onApplyPlan === "function") {
+              onApplyPlan(null);
             }
             swiper.update();
           }}
