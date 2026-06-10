@@ -1287,13 +1287,17 @@ body.is-pointer-dragging * {
 @media (max-width: 640px) {
   .exerciseRow {
     display: grid;
-    grid-template-columns: 26px minmax(0, 1fr) 50px 50px 34px;
     grid-template-rows: auto auto;
     column-gap: 6px;
     row-gap: 6px;
     align-items: start;
     padding: 8px 10px;
     min-height: 0;
+  }
+
+  /* Draft rows: tag sizes to text; W/R share remaining row width (same as composer). */
+  .exerciseRow:not(.exerciseRow--composer) {
+    grid-template-columns: 26px minmax(0, max-content) minmax(0, 1fr) 34px;
   }
 
   .exerciseRow .exerciseNameCell {
@@ -1311,13 +1315,12 @@ body.is-pointer-dragging * {
     align-self: center;
   }
 
-  /* Draft row: muscle tag fills the flexible column (W/R/X stay fixed-width). */
   .exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .muscleTag {
     grid-column: 2;
     grid-row: 1;
-    justify-self: stretch;
+    justify-self: start;
     align-self: center;
-    width: 100%;
+    width: fit-content;
     max-width: 100%;
     min-width: 0;
     box-sizing: border-box;
@@ -1326,7 +1329,7 @@ body.is-pointer-dragging * {
   }
 
   .exerciseRow:not(.exerciseRow--composer) .exerciseNameCell .check-text {
-    grid-column: 2 / span 4;
+    grid-column: 2 / -2;
     grid-row: 2;
     min-width: 0;
     align-self: center;
@@ -1347,7 +1350,7 @@ body.is-pointer-dragging * {
   }
 
   .exerciseFields {
-    grid-column: 3 / 5;
+    grid-column: 3;
     grid-row: 1;
     display: flex;
     flex-wrap: nowrap;
@@ -1359,7 +1362,7 @@ body.is-pointer-dragging * {
 
   .rowAdd,
   .rowRemove {
-    grid-column: 5;
+    grid-column: -2;
     grid-row: 1;
     justify-self: center;
     align-self: center;
@@ -1382,14 +1385,25 @@ body.is-pointer-dragging * {
 
   .numField {
     box-sizing: border-box;
-    width: 50px;
-    min-width: 0;
-    max-width: 50px;
-    height: 36px;
-    padding: 0 4px;
+    height: 29px;
+    padding: 0 2px;
     font-size: 16px;
-    border-radius: 10px;
+    border-radius: 8px;
     text-align: center;
+  }
+
+  .exerciseFields .numField {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .exerciseFields .numField:first-child {
+    flex: 1 1 0;
+  }
+
+  .exerciseFields .numField:last-child {
+    flex: 0.8 1 0;
   }
 
   /* Composer: group + W/R + on row 1; exercise picker full width on row 2 */
@@ -1425,20 +1439,6 @@ body.is-pointer-dragging * {
     grid-column: 2;
     grid-row: 1;
     min-width: 0;
-  }
-
-  .exerciseRow--composer .exerciseFields .numField {
-    width: auto;
-    min-width: 0;
-    max-width: none;
-  }
-
-  .exerciseRow--composer .exerciseFields .numField:first-child {
-    flex: 1 1 0;
-  }
-
-  .exerciseRow--composer .exerciseFields .numField:last-child {
-    flex: 0.8 1 0;
   }
 
   .exerciseRow--composer > .rowAdd {
@@ -1669,13 +1669,13 @@ body.is-pointer-dragging * {
 }
 
 .numField {
-  width: 96px;
-  height: 46px;
-  border-radius: 12px;
+  width: 77px;
+  height: 37px;
+  border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(0, 0, 0, 0.18);
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 9px;
   /* 16px+ prevents iOS Safari from zooming the viewport on focus. */
   font-size: 16px;
   outline: none;
