@@ -962,9 +962,8 @@ export function WorkoutEditor({
         ) : null}
         {submitError ? <div className="errorText">{submitError}</div> : null}
         <section className="groupSection" aria-label="Current workout">
-          <div className="groupHeaderRow">
-            <div className="groupHeader">Your workout</div>
-            {showTodaysWorkoutDelete && typeof onDeleteTodaysWorkoutRequest === "function" ? (
+          {showTodaysWorkoutDelete && typeof onDeleteTodaysWorkoutRequest === "function" ? (
+            <div className="groupHeaderRow">
               <button
                 type="button"
                 className="btn btn-compact btn-danger-text"
@@ -974,8 +973,8 @@ export function WorkoutEditor({
               >
                 Usuń Workout
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <PlanTemplateCarousel
             templates={planCarouselTemplates}

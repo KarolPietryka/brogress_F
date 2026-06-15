@@ -54,7 +54,7 @@ function cueTileInner(label) {
 
 /**
  * One slide = one element from {@code GET /workout/recent-plan-templates} (data includes {@code lastUsedDate} and {@code bodyPart}).
- * When {@code showStartNewFirstSlide} (BE: no workout today): slide 0 is “Add new”; slides {@code 1..n} are history plans; last slide is “Start new” on the right. {@code initialSlide} is 0. Lead and trail call {@code onApplyPlan(null)}; plans call {@code onApplyPlan(template)}.
+ * When {@code showStartNewFirstSlide} (BE: no workout today): slide 0 and the last slide are both “Add new” (blank session); slides {@code 1..n} are history plans. {@code initialSlide} is 0. Lead and trail call {@code onApplyPlan(null)}; plans call {@code onApplyPlan(template)}.
  */
 export function PlanTemplateCarousel({
   templates,
@@ -170,7 +170,7 @@ export function PlanTemplateCarousel({
           ))}
           {showStartNewFirstSlide ? (
             <SwiperSlide key="__start_new_trail__" className="planCarousel__slide" style={slideStyle}>
-              {cueTileInner("Start new")}
+              {cueTileInner("Add new")}
             </SwiperSlide>
           ) : null}
         </Swiper>
